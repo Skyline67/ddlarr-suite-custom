@@ -1,5 +1,6 @@
 # IDE - JetBrains
 .idea/
+.ssh/
 
 # macOS
 .DS_Store
