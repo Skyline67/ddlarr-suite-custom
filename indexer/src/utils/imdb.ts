@@ -1,9 +1,44 @@
 import { fetchJson } from './http.js';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const IMDB_API_BASE = 'https://api.imdbapi.dev';
 
-// Cache for IMDB titles (results never change, so no expiration needed)
-const imdbTitlesCache = new Map<string, ImdbTitles>();
+// Cache file path (persistent across restarts)
+const CACHE_DIR = process.env.CACHE_DIR || './cache';
+const CACHE_FILE = path.join(CACHE_DIR, 'imdb-titles.json');
+
+// In-memory cache (loaded from file on startup)
+let imdbTitlesCache: Record<string, ImdbTitles> = {};
+
+// Load cache from file on module initialization
+function loadCache(): void {
+  try {
+    if (fs.existsSync(CACHE_FILE)) {
+      const data = fs.readFileSync(CACHE_FILE, 'utf-8');
+      imdbTitlesCache = JSON.parse(data);
+      console.log(`[IMDB] Loaded ${Object.keys(imdbTitlesCache).length} cached titles from disk`);
+    }
+  } catch (error) {
+    console.error('[IMDB] Error loading cache:', error);
+    imdbTitlesCache = {};
+  }
+}
+
+// Save cache to file
+function saveCache(): void {
+  try {
+    if (!fs.existsSync(CACHE_DIR)) {
+      fs.mkdirSync(CACHE_DIR, { recursive: true });
+    }
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(imdbTitlesCache, null, 2));
+  } catch (error) {
+    console.error('[IMDB] Error saving cache:', error);
+  }
+}
+
+// Load cache on module initialization
+loadCache();
 
 interface ImdbTitle {
   id: string;
@@ -97,7 +132,7 @@ export async function fetchImdbTitles(imdbId: string): Promise<ImdbTitles> {
   const normalizedId = normalizeImdbId(imdbId);
 
   // Check cache first
-  const cached = imdbTitlesCache.get(normalizedId);
+  const cached = imdbTitlesCache[normalizedId];
   if (cached) {
     console.log(`[IMDB] Cache hit for ${normalizedId}`);
     return cached;
@@ -113,7 +148,8 @@ export async function fetchImdbTitles(imdbId: string): Promise<ImdbTitles> {
 
   // Only cache successful results (at least one title found)
   if (originalTitle || frenchTitle) {
-    imdbTitlesCache.set(normalizedId, result);
+    imdbTitlesCache[normalizedId] = result;
+    saveCache();
     console.log(`[IMDB] Cached titles for ${normalizedId}`);
   }
 
