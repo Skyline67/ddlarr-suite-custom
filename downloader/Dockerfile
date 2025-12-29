@@ -1,5 +1,8 @@
 FROM node:20-alpine
 
+# Install curl and wget for direct download clients
+RUN apk add --no-cache curl wget
+
 WORKDIR /app
 
 # Copy package files
