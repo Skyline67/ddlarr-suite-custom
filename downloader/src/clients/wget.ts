@@ -115,7 +115,7 @@ export class WgetClient implements DownloadClient {
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true });
     }
-    const tempPath = path.join(tempDir, `wget_${Date.now()}_${finalFilename}`);
+    const tempPath = path.join(tempDir, `.wget_${Date.now()}_${finalFilename}`);
     const finalPath = path.join(config.destinationPath, finalFilename);
 
     console.log(`[wget] Downloading: ${url}`);
