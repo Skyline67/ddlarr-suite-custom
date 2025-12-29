@@ -16,10 +16,12 @@ Le projet se compose de 3 services Docker :
 
 ## Sites supportés
 
-| Site | Variable ENV | Description |
-|------|--------------|-------------|
-| WawaCity | `WAWACITY_URL` | Scraping HTML |
-| Zone-Téléchargement | `ZONETELECHARGER_URL` | Scraping HTML |
+| Site | Variable ENV | Telegram | Description |
+|------|--------------|----------|-------------|
+| WawaCity | `WAWACITY_URL` | [@Wawacityofficiel](https://t.me/s/Wawacityofficiel) | Scraping HTML |
+| Zone-Téléchargement | `ZONETELECHARGER_URL` | [@ztofficiel](https://t.me/s/ztofficiel) | Scraping HTML |
+
+> **Auto-détection des URLs** : Si les variables `WAWACITY_URL` ou `ZONETELECHARGER_URL` sont vides, les URLs sont automatiquement récupérées depuis les canaux Telegram officiels.
 
 ## Installation
 
@@ -39,9 +41,10 @@ cp .env.example .env
 Éditer le fichier `.env` :
 
 ```bash
-# URLs des sites (au moins un requis)
-WAWACITY_URL=https://www.wawacity.xxx/
-ZONETELECHARGER_URL=https://www.zone-telechargement.xxx/
+# URLs des sites (optionnel - auto-détection depuis Telegram si vide)
+# Laissez vide pour utiliser l'auto-détection, ou forcez une URL spécifique
+WAWACITY_URL=
+ZONETELECHARGER_URL=
 
 # Chemin du dossier blackhole (requis pour le downloader)
 BLACKHOLE_PATH=/chemin/vers/blackhole
@@ -49,6 +52,8 @@ BLACKHOLE_PATH=/chemin/vers/blackhole
 # Clé API AllDebrid (optionnel mais recommandé)
 ALLDEBRID_API_KEY=votre_cle_api
 ```
+
+> **Note** : Les URLs des sites changent régulièrement. L'auto-détection depuis Telegram permet de toujours avoir les URLs à jour sans modifier la configuration.
 
 ### 3. Lancer les services
 
@@ -204,8 +209,10 @@ Voir `.env.example` pour la liste complète.
 | `INDEXER_PORT` | Port de l'indexeur Torznab | 9117 |
 | `DOWNLOADER_PORT` | Port du downloader | 9118 |
 | `DLPROTECT_RESOLVER_PORT` | Port du résolveur dl-protect | 5000 |
-| `WAWACITY_URL` | URL de WawaCity | - |
-| `ZONETELECHARGER_URL` | URL de Zone-Téléchargement | - |
+| `WAWACITY_URL` | URL de WawaCity (auto-détection si vide) | auto |
+| `ZONETELECHARGER_URL` | URL de Zone-Téléchargement (auto-détection si vide) | auto |
+| `WAWACITY_TELEGRAM` | Canal Telegram WawaCity pour auto-détection | https://t.me/s/Wawacityofficiel |
+| `ZONETELECHARGER_TELEGRAM` | Canal Telegram ZT pour auto-détection | https://t.me/s/ztofficiel |
 | `BLACKHOLE_PATH` | Dossier blackhole | - |
 | `ALLDEBRID_API_KEY` | Clé API AllDebrid | - |
 | `DLPROTECT_RESOLVE_AT` | Où résoudre les liens dl-protect (voir ci-dessous) | indexer |
@@ -216,7 +223,7 @@ Voir `.env.example` pour la liste complète.
 | `JD_ENABLED` | Activer JDownloader | false |
 | `ARIA2_ENABLED` | Activer aria2 | false |
 
-> Au moins une URL de site (`WAWACITY_URL` ou `ZONETELECHARGER_URL`) doit être configurée.
+> Les URLs des sites sont auto-détectées depuis Telegram au démarrage si non configurées. Vous pouvez forcer une URL en la définissant explicitement.
 
 ### Résolution des liens dl-protect
 

@@ -1,36 +1,74 @@
 import { config as dotenvConfig } from 'dotenv';
+import { getSiteUrlFromTelegram, getDefaultTelegramChannel } from './utils/telegram.js';
 
 dotenvConfig();
 
+// Static config (read from env at startup)
 export const config = {
   port: parseInt(process.env.PORT || '9117', 10),
   host: process.env.HOST || '0.0.0.0',
 
+  // Site URLs from env (may be empty - will be resolved from Telegram)
   sites: {
     wawacity: process.env.WAWACITY_URL || '',
     zonetelecharger: process.env.ZONETELECHARGER_URL || '',
-    // darkiworld: process.env.DARKIWORLD_URL || '', // Disabled - not fully implemented
   },
 
-  // darkiworldApiKey: process.env.DARKIWORLD_API_KEY || '', // Disabled
+  // Telegram channel URLs for dynamic URL resolution
+  telegram: {
+    wawacity: process.env.WAWACITY_TELEGRAM || getDefaultTelegramChannel('wawacity'),
+    zonetelecharger: process.env.ZONETELECHARGER_TELEGRAM || getDefaultTelegramChannel('zonetelecharger'),
+  },
+
   dlprotectServiceUrl: process.env.DLPROTECT_SERVICE_URL || 'http://localhost:5000',
-  // Where to resolve dl-protect links: 'indexer' or 'downloader'
   dlprotectResolveAt: (process.env.DLPROTECT_RESOLVE_AT || 'indexer') as 'indexer' | 'downloader',
-  // Maximum number of pages to crawl per search (per provider)
   searchMaxPages: parseInt(process.env.SEARCH_MAX_PAGES || '5', 10),
-  // Disable cache for remote dl-protect service
   disableRemoteDlProtectCache: process.env.DISABLE_REMOTE_DL_PROTECT_CACHE === 'true',
 } as const;
 
-export type SiteType = 'wawacity' | 'zonetelecharger';
-// export type SiteType = 'wawacity' | 'zonetelecharger' | 'darkiworld'; // Darkiworld disabled
+// Resolved site URLs (populated at initialization or from env)
+const resolvedSiteUrls: Record<SiteType, string> = {
+  wawacity: config.sites.wawacity,
+  zonetelecharger: config.sites.zonetelecharger,
+};
 
-export function getSiteUrl(site: SiteType): string {
-  return config.sites[site];
+export type SiteType = 'wawacity' | 'zonetelecharger';
+
+/**
+ * Initialize site URLs - fetches from Telegram if not configured in env
+ * Should be called at application startup
+ */
+export async function initializeSiteUrls(): Promise<void> {
+  const sites: SiteType[] = ['wawacity', 'zonetelecharger'];
+
+  for (const site of sites) {
+    if (!config.sites[site]) {
+      console.log(`[Config] ${site} URL not configured, fetching from Telegram...`);
+      const url = await getSiteUrlFromTelegram(site, config.telegram[site]);
+      if (url) {
+        resolvedSiteUrls[site] = url;
+        console.log(`[Config] ${site} URL resolved: ${url}`);
+      } else {
+        console.warn(`[Config] Could not resolve ${site} URL from Telegram`);
+      }
+    } else {
+      console.log(`[Config] ${site} URL configured: ${config.sites[site]}`);
+    }
+  }
 }
 
+/**
+ * Get site URL (resolved from env or Telegram)
+ */
+export function getSiteUrl(site: SiteType): string {
+  return resolvedSiteUrls[site];
+}
+
+/**
+ * Check if site is configured (has a URL either from env or resolved from Telegram)
+ */
 export function isSiteConfigured(site: SiteType): boolean {
-  return Boolean(config.sites[site]);
+  return Boolean(resolvedSiteUrls[site]);
 }
 
 export function isDlprotectServiceConfigured(): boolean {

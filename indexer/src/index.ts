@@ -1,5 +1,5 @@
 import Fastify, { FastifyRequest, FastifyReply } from 'fastify';
-import { config } from './config.js';
+import { config, initializeSiteUrls } from './config.js';
 import { torznabRoutes } from './routes/torznab.js';
 import { getAvailableSites } from './scrapers/index.js';
 import { renderHomePage } from './views/home.js';
@@ -24,6 +24,9 @@ const app = Fastify({
 
 async function start(): Promise<void> {
   try {
+    // Initialize site URLs (fetch from Telegram if not configured)
+    await initializeSiteUrls();
+
     // Register routes
     await app.register(torznabRoutes);
 
