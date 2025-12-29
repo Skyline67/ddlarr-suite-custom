@@ -154,10 +154,16 @@ export class CurlClient implements DownloadClient {
               progress.progress = lastProgress;
             }
 
-            // Last column is current speed (e.g., "10.5M" or "0")
+            // Last column is current speed (e.g., "10.5M" or "1024" for bytes)
             const speedStr = parts[parts.length - 1];
-            if (speedStr && speedStr !== '0') {
-              progress.speed = speedStr + '/s';
+            if (speedStr && speedStr !== '0' && speedStr !== '--:--:--') {
+              // Add unit if it's just a number (means bytes)
+              if (/^\d+\.?\d*$/.test(speedStr)) {
+                const bytes = parseFloat(speedStr);
+                progress.speed = this.formatBytes(bytes) + '/s';
+              } else {
+                progress.speed = speedStr + '/s';
+              }
             }
           }
         }
