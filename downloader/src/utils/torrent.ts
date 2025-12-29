@@ -42,6 +42,7 @@ export function extractLinkFromTorrent(filePath: string): string | null {
 export function extractNameFromTorrent(filePath: string): string | null {
   try {
     const data = fs.readFileSync(filePath);
+    // Use latin1 for bencode structure parsing (to get correct byte positions)
     const content = data.toString('latin1');
 
     // Parse name field in info dict: 4:name<length>:<value>
@@ -49,7 +50,9 @@ export function extractNameFromTorrent(filePath: string): string | null {
     if (nameMatch) {
       const len = parseInt(nameMatch[1], 10);
       const start = content.indexOf(nameMatch[0]) + nameMatch[0].length;
-      return content.slice(start, start + len);
+      // Extract raw bytes and decode as UTF-8
+      const nameBytes = data.subarray(start, start + len);
+      return nameBytes.toString('utf8');
     }
 
     return null;
