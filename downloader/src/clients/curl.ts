@@ -1,7 +1,6 @@
-import { spawn, ChildProcess } from 'child_process';
+import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { DownloadClient } from './base.js';
 import { getConfig } from '../utils/config.js';
 
@@ -91,7 +90,12 @@ export class CurlClient implements DownloadClient {
       }
     }
 
-    const tempPath = path.join(os.tmpdir(), `curl_${Date.now()}_${finalFilename}`);
+    // Use .tmp subdirectory in destination to avoid cross-device rename issues
+    const tempDir = path.join(config.destinationPath, '.tmp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    const tempPath = path.join(tempDir, `curl_${Date.now()}_${finalFilename}`);
     const finalPath = path.join(config.destinationPath, finalFilename);
 
     console.log(`[curl] Downloading: ${url}`);
