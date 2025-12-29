@@ -21,21 +21,23 @@ export async function addDownloadToAll(url: string, filename?: string): Promise<
     return false;
   }
 
-  let success = false;
-
+  // Try each client until one succeeds
   for (const client of enabledClients) {
     try {
       const result = await client.addDownload(url, filename);
       if (result) {
         console.log(`[Clients] Successfully added to ${client.name}`);
-        success = true;
+        return true; // Stop after first success
       }
+      console.warn(`[Clients] ${client.name} returned false, trying next client...`);
     } catch (error) {
       console.error(`[Clients] Failed to add to ${client.name}:`, error);
+      // Continue to next client
     }
   }
 
-  return success;
+  console.error('[Clients] All clients failed to add download');
+  return false;
 }
 
 export type { DownloadClient } from './base.js';
