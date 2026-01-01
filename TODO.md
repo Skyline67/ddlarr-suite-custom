@@ -14,3 +14,10 @@
   - Meilleure gestion des erreurs
   - Authentification plus robuste
   - Support de toutes les versions de l'API
+
+### Developper un downloader complet qui impletement les meme protocoles que qBittorent pour améliorer l'integration 
+
+
+### Indiquer en debut de log si le container démarre bien avec le code à jour
+ - commit courant le plus recent.
+ - Mettre un gros warning si ce n'est pas le cas.
