@@ -72,7 +72,11 @@ export function buildTorznabResponse(items: TorznabItem[], siteTitle: string, ba
 
     // Determine content type
     const isTV = item.category >= 5000 && item.category < 6000;
-    torznabAttrs.push({ '@_name': 'type', '@_value': isTV ? 'series' : 'movie' });
+    const isBook = item.category >= 7000 && item.category < 8000;
+    let contentType = 'movie';
+    if (isTV) contentType = 'series';
+    if (isBook) contentType = 'ebook';
+    torznabAttrs.push({ '@_name': 'type', '@_value': contentType });
 
     const rssItem: Record<string, unknown> = {
       title: item.title,
@@ -150,6 +154,10 @@ export function buildCapsResponse(caps: TorznabCaps): string {
           '@_available': caps.searching.moviesearch.available ? 'yes' : 'no',
           '@_supportedParams': 'q,year,imdbid,tmdbid',
         },
+        'book-search': {
+          '@_available': caps.searching.booksearch.available ? 'yes' : 'no',
+          '@_supportedParams': 'q,author,title',
+        },
       },
       categories: {
         category: [
@@ -171,6 +179,16 @@ export function buildCapsResponse(caps: TorznabCaps): string {
               { '@_id': '5040', '@_name': 'TV/HD' },
               { '@_id': '5045', '@_name': 'TV/UHD' },
               { '@_id': '5070', '@_name': 'Anime' },
+            ],
+          },
+          {
+            '@_id': '7000',
+            '@_name': 'Books',
+            subcat: [
+              { '@_id': '7010', '@_name': 'Books/Mags' },
+              { '@_id': '7020', '@_name': 'Books/EBook' },
+              { '@_id': '7030', '@_name': 'Books/Comics' },
+              { '@_id': '7050', '@_name': 'Books/Other' },
             ],
           },
         ],
