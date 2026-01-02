@@ -9,6 +9,11 @@ export enum TorznabCategory {
   TVHD = 5040,
   TVUHD = 5045,
   Anime = 5070,
+  Books = 7000,
+  BooksMags = 7010,
+  BooksEBook = 7020,
+  BooksComics = 7030,
+  BooksOther = 7050,
 }
 
 export interface TorznabItem {
@@ -41,6 +46,7 @@ export interface TorznabCaps {
     search: { available: boolean };
     tvsearch: { available: boolean };
     moviesearch: { available: boolean };
+    booksearch: { available: boolean };
   };
   categories: Array<{
     id: number;
@@ -61,7 +67,7 @@ export interface SearchParams {
   year?: string; // Année de production (ex: "2006")
 }
 
-export type ContentType = 'movie' | 'series' | 'anime';
+export type ContentType = 'movie' | 'series' | 'anime' | 'ebook';
 
 export interface ScraperResult {
   title: string;

@@ -27,6 +27,17 @@ const APP_CONFIGS = {
       { id: 5070, name: 'Anime' },
     ],
   },
+  readarr: {
+    name: 'Readarr',
+    description: 'Ebooks & Livres',
+    categories: [
+      { id: 7000, name: 'Books' },
+      { id: 7010, name: 'Magazines' },
+      { id: 7020, name: 'EBook' },
+      { id: 7030, name: 'Comics' },
+      { id: 7050, name: 'Other' },
+    ],
+  },
 };
 
 export function renderHomePage(host: string): string {
@@ -320,10 +331,21 @@ interface AppConfig {
 }
 
 function generateAppSection(appKey: string, appConfig: AppConfig, sites: string[], host: string): string {
-  const searchType = appKey === 'radarr' ? 'movie' : 'tvsearch';
-  const testExample = appKey === 'radarr'
-    ? '?t=movie&cat=2000&q=Movie+Title'
-    : '?t=tvsearch&cat=5000&q=Show+Title&season=1&ep=2';
+  const searchTypeMap: Record<string, string> = {
+    radarr: 'movie',
+    sonarr: 'tvsearch',
+    anime: 'tvsearch',
+    readarr: 'book',
+  };
+  const searchType = searchTypeMap[appKey] || 'search';
+
+  const testExampleMap: Record<string, string> = {
+    radarr: '?t=movie&cat=2000&q=Movie+Title',
+    sonarr: '?t=tvsearch&cat=5000&q=Show+Title&season=1&ep=2',
+    anime: '?t=tvsearch&cat=5070&q=Anime+Title',
+    readarr: '?t=book&cat=7000&q=Book+Title',
+  };
+  const testExample = testExampleMap[appKey] || '?t=search&q=Query';
 
   const categoryCheckboxes = appConfig.categories.map(cat => `
     <span>

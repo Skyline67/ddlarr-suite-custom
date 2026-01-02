@@ -6,13 +6,14 @@ import { isNameMatch, extractName } from '../utils/text.js';
 import { getSearchQueriesFromImdb } from '../utils/imdb.js';
 import { config } from '../config.js';
 
-type WawaContentType = 'films' | 'series' | 'mangas';
+type WawaContentType = 'films' | 'series' | 'mangas' | 'ebooks';
 
 // Mapping pour le paramètre de recherche
 const CONTENT_TYPE_MAP: Record<string, WawaContentType> = {
   movie: 'films',
   series: 'series',
   anime: 'mangas',
+  ebook: 'ebooks',
 };
 
 // Sélecteurs pour les résultats de recherche
@@ -20,6 +21,7 @@ const RESULT_SELECTORS: Record<string, string> = {
   movie: 'a[href^="?p=film&id="]',
   series: 'a[href^="?p=serie&id="]',
   anime: 'a[href^="?p=manga&id="]',
+  ebook: 'a[href^="?p=ebook&id="]',
 };
 
 interface SearchResult {
@@ -38,15 +40,17 @@ export class WawacityScraper implements BaseScraper {
   async search(params: SearchParams): Promise<ScraperResult[]> {
     const results: ScraperResult[] = [];
 
-    const [movies, series, anime] = await Promise.allSettled([
+    const [movies, series, anime, ebooks] = await Promise.allSettled([
       this.searchMovies(params),
       this.searchSeries(params),
       this.searchAnime(params),
+      this.searchEbooks(params),
     ]);
 
     if (movies.status === 'fulfilled') results.push(...movies.value);
     if (series.status === 'fulfilled') results.push(...series.value);
     if (anime.status === 'fulfilled') results.push(...anime.value);
+    if (ebooks.status === 'fulfilled') results.push(...ebooks.value);
 
     return results;
   }
@@ -61,6 +65,10 @@ export class WawacityScraper implements BaseScraper {
 
   async searchAnime(params: SearchParams): Promise<ScraperResult[]> {
     return this.searchByType(params, 'anime');
+  }
+
+  async searchEbooks(params: SearchParams): Promise<ScraperResult[]> {
+    return this.searchByType(params, 'ebook');
   }
 
   private async searchByType(params: SearchParams, contentType: ContentType): Promise<ScraperResult[]> {

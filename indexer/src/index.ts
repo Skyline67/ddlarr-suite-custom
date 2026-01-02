@@ -55,7 +55,7 @@ async function start(): Promise<void> {
         endpoints: {
           health: '/health',
           sites: '/sites',
-          api: '/api/:site?t=caps|search|tvsearch|movie',
+          api: '/api/:site?t=caps|search|tvsearch|movie|book',
         },
       };
     });

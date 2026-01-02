@@ -44,6 +44,7 @@ interface SearchContext {
 const MOVIE_CATEGORIES = [2000, 2030, 2040, 2045, 2060];
 const TV_CATEGORIES = [5000, 5030, 5040, 5045];
 const ANIME_CATEGORIES = [5070];
+const EBOOK_CATEGORIES = [7000, 7010, 7020, 7030, 7050];
 
 function getCapsForSite(siteName: string): TorznabCaps {
   return {
@@ -58,6 +59,7 @@ function getCapsForSite(siteName: string): TorznabCaps {
       search: { available: true },
       tvsearch: { available: true },
       moviesearch: { available: true },
+      booksearch: { available: true },
     },
     categories: [
       // Movies
@@ -73,6 +75,12 @@ function getCapsForSite(siteName: string): TorznabCaps {
       { id: TorznabCategory.TVUHD, name: 'TV/UHD' },
       // Anime
       { id: TorznabCategory.Anime, name: 'Anime' },
+      // Books
+      { id: TorznabCategory.Books, name: 'Books' },
+      { id: TorznabCategory.BooksMags, name: 'Books/Mags' },
+      { id: TorznabCategory.BooksEBook, name: 'Books/EBook' },
+      { id: TorznabCategory.BooksComics, name: 'Books/Comics' },
+      { id: TorznabCategory.BooksOther, name: 'Books/Other' },
     ],
   };
 }
@@ -147,8 +155,10 @@ async function executeSearch(ctx: SearchContext): Promise<string> {
         categoryFilter.some(cat => TV_CATEGORIES.includes(cat));
       const shouldSearchAnime = !categoryFilter || categoryFilter.length === 0 ||
         categoryFilter.some(cat => ANIME_CATEGORIES.includes(cat));
+      const shouldSearchEbooks = !categoryFilter || categoryFilter.length === 0 ||
+        categoryFilter.some(cat => EBOOK_CATEGORIES.includes(cat));
 
-      console.log(`[Torznab] Search filters - Movies: ${shouldSearchMovies}, TV: ${shouldSearchTV}, Anime: ${shouldSearchAnime}`);
+      console.log(`[Torznab] Search filters - Movies: ${shouldSearchMovies}, TV: ${shouldSearchTV}, Anime: ${shouldSearchAnime}, Ebooks: ${shouldSearchEbooks}`);
 
       if (shouldSearchMovies) {
         searchPromises.push(scraper.searchMovies(searchParams));
@@ -158,6 +168,9 @@ async function executeSearch(ctx: SearchContext): Promise<string> {
       }
       if (shouldSearchAnime && scraper.searchAnime) {
         searchPromises.push(scraper.searchAnime(searchParams));
+      }
+      if (shouldSearchEbooks && scraper.searchEbooks) {
+        searchPromises.push(scraper.searchEbooks(searchParams));
       }
 
       const searchResults = await Promise.allSettled(searchPromises);
@@ -185,6 +198,14 @@ async function executeSearch(ctx: SearchContext): Promise<string> {
         results = await scraper.searchSeries(searchParams);
       } else {
         console.log(`[Torznab] Skipping tvsearch without imdbid to avoid duplicates`);
+        results = [];
+      }
+      break;
+    case 'book':
+      if (scraper.searchEbooks) {
+        results = await scraper.searchEbooks(searchParams);
+      } else {
+        console.log(`[Torznab] Scraper ${scraper.name} does not support ebook search`);
         results = [];
       }
       break;
@@ -258,7 +279,7 @@ async function handleTorznabRequest(
   }
 
   // Validate action
-  if (!action || !['search', 'tvsearch', 'movie'].includes(action)) {
+  if (!action || !['search', 'tvsearch', 'movie', 'book'].includes(action)) {
     return buildErrorResponse(200, 'Missing or invalid parameter t');
   }
 

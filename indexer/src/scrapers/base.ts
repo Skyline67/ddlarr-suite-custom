@@ -8,6 +8,7 @@ export interface BaseScraper {
   searchMovies(params: SearchParams): Promise<ScraperResult[]>;
   searchSeries(params: SearchParams): Promise<ScraperResult[]>;
   searchAnime?(params: SearchParams): Promise<ScraperResult[]>;
+  searchEbooks?(params: SearchParams): Promise<ScraperResult[]>;
 }
 
 export function parseQuality(title: string): string | undefined {
@@ -90,6 +91,10 @@ export function parseSize(sizeStr: string): number | undefined {
 export function contentTypeToCategory(contentType: ContentType, quality?: string): number {
   if (contentType === 'anime') {
     return 5070;
+  }
+
+  if (contentType === 'ebook') {
+    return 7020; // BooksEBook par défaut
   }
 
   const isHD = quality && /1080p|720p|HD|FHD|HDLight/i.test(quality);
