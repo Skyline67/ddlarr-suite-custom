@@ -223,6 +223,19 @@ async function executeSearch(ctx: SearchContext): Promise<string> {
     });
   }
 
+  // Filter out results without valid size (Radarr/Sonarr need size info)
+  const beforeSizeFilter = results.length;
+  results = results.filter(result => {
+    if (!result.size || result.size <= 0) {
+      console.log(`[Torznab] Skipping "${result.title}" - no valid size`);
+      return false;
+    }
+    return true;
+  });
+  if (beforeSizeFilter !== results.length) {
+    console.log(`[Torznab] Filtered out ${beforeSizeFilter - results.length} results without size`);
+  }
+
   // Process results (resolve dl-protect links)
   const items = await processResults(results);
 

@@ -25,6 +25,11 @@ function categoryToName(category: TorznabCategory): string {
     [TorznabCategory.TVHD]: 'TV/HD',
     [TorznabCategory.TVUHD]: 'TV/UHD',
     [TorznabCategory.Anime]: 'Anime',
+    [TorznabCategory.Books]: 'Books',
+    [TorznabCategory.BooksMags]: 'Books/Mags',
+    [TorznabCategory.BooksEBook]: 'Books/EBook',
+    [TorznabCategory.BooksComics]: 'Books/Comics',
+    [TorznabCategory.BooksOther]: 'Books/Other',
   };
   return names[category] || 'Other';
 }
