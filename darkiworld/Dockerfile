@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install dependencies and Google Chrome
+# Install dependencies, Xvfb, X11 libs, and Google Chrome
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -29,6 +29,20 @@ RUN apt-get update && apt-get install -y \
     xdg-utils \
     libu2f-udev \
     libvulkan1 \
+    # Xvfb and X11 dependencies for virtual display
+    xvfb \
+    x11-utils \
+    x11-xserver-utils \
+    dbus-x11 \
+    libx11-xcb1 \
+    libxcb1 \
+    libxext6 \
+    libxrender1 \
+    libxi6 \
+    libxtst6 \
+    # Python Tkinter for pyautogui and scrot for screenshots
+    python3-tk \
+    scrot \
     && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/googlechrome-linux-keyring.gpg \
     && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/googlechrome-linux-keyring.gpg] https://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
     && apt-get update \
@@ -38,10 +52,20 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Pre-download the UC ChromeDriver during build (instead of first API call)
+RUN python -c "from seleniumbase import SB; SB(uc=True, headless=True).__enter__()" || true
+
 COPY *.py .
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
 
 ENV PYTHONUNBUFFERED=1
+# Configure display for Xvfb
+ENV DISPLAY=:99
+ENV DBUS_SESSION_BUS_ADDRESS=/dev/null
 
 EXPOSE 5002
 
+# Use entrypoint script to start Xvfb before the app
+ENTRYPOINT ["./entrypoint.sh"]
 CMD ["python", "main.py"]

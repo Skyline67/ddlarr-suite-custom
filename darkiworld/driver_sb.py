@@ -57,23 +57,22 @@ def close_driver():
     """Close the SeleniumBase driver if it exists"""
     global _sb_instance
 
+    old_instance = None
+    
+    # Quickly grab the instance and clear the global - don't hold lock during quit
     with _driver_lock:
         if _sb_instance is not None:
-            logger.info("Closing SeleniumBase driver...")
-            try:
-                # Try to quit the underlying driver first
-                if hasattr(_sb_instance, 'driver') and _sb_instance.driver:
-                    try:
-                        _sb_instance.driver.quit()
-                        logger.info("✓ Driver quit successfully")
-                    except Exception as e:
-                        logger.debug(f"Error quitting driver: {e}")
+            old_instance = _sb_instance
+            _sb_instance = None
+            logger.info("✓ Driver instance cleared (ready for new requests)")
 
-                # Close the context manager
-                _sb_instance.close()
-                logger.info("✓ Context manager closed")
-            except Exception as e:
-                logger.warning(f"Error during driver cleanup: {e}")
-            finally:
-                _sb_instance = None
-                logger.info("✓ Driver instance cleared")
+    # Now quit the old driver WITHOUT holding the lock
+    # This allows new requests to create a new driver immediately
+    if old_instance is not None:
+        logger.info("Closing old SeleniumBase driver...")
+        try:
+            if hasattr(old_instance, 'driver') and old_instance.driver:
+                old_instance.driver.quit()
+                logger.info("✓ Old driver quit successfully")
+        except Exception as e:
+            logger.debug(f"Error quitting old driver: {e}")

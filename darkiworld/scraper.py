@@ -17,8 +17,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from config import DARKIWORLD_URL, ALLOWED_HOSTER, DARKIWORLD_EMAIL, DARKIWORLD_PASSWORD
 from driver_sb import get_driver, close_driver
 from auth_sb import ensure_authenticated
-from utils import parse_relative_date
-from debrid import debrid_links
+from utils import parse_relative_date, build_release_name
+from debrid import check_links_availability
 
 logger = logging.getLogger(__name__)
 
@@ -176,12 +176,23 @@ def get_download_links(sb, release_ids: list) -> dict:
             logger.info(f"Getting download link for release {release_id}...")
 
             # Use JavaScript fetch to call the API with existing cookies (using sb instead of driver)
+            # IMPORTANT: Manually extract XSRF-TOKEN from cookies and add to headers
+            # This is often required for Laravel implementations where fetch doesn't auto-add the header
             result = sb.execute_script(f"""
-                return fetch('https://darkiworld15.com/api/v1/liens/{release_id}/download', {{
+                function getCookie(name) {{
+                    const value = `; ${{document.cookie}}`;
+                    const parts = value.split(`; ${{name}}=`);
+                    if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
+                }}
+                
+                const xsrfToken = getCookie('XSRF-TOKEN');
+                
+                return fetch('/api/v1/liens/{release_id}/download', {{
                     method: 'POST',
                     headers: {{
                         'Content-Type': 'application/json',
-                        'Accept': 'application/json'
+                        'Accept': 'application/json',
+                        'X-XSRF-TOKEN': xsrfToken || ''
                     }},
                     body: JSON.stringify({{ token: "" }})
                 }})
@@ -645,7 +656,7 @@ def search_darkiworld(data: dict) -> dict:
         # Call API to get releases
         logger.info(f"Fetching releases from API for title {media_id}...")
         try:
-            api_url = f"https://darkiworld15.com/api/v1/liens?perPage=15&title_id={media_id}&loader=linksdl&season=1&filters=&paginate=preferLengthAware"
+            api_url = f"/api/v1/liens?perPage=60&title_id={media_id}&loader=linksdl&season=1&filters=&paginate=preferLengthAware"
 
             # Use JavaScript fetch to call API with existing cookies (using sb instead of driver)
             api_response = sb.execute_script(f"""
@@ -704,54 +715,68 @@ def search_darkiworld(data: dict) -> dict:
         logger.info(f"✅ Parsed {len(releases)} total releases")
 
         # Filter and sort releases
+        # Fetch more candidates (50) than needed (25) to account for dead links
+        target_limit = 25
+        buffer_limit = 50
+        
         logger.info(f"Filtering by allowed hosters: {ALLOWED_HOSTER}")
         filtered_releases = filter_and_sort_releases(
             releases,
             allowed_hosters=ALLOWED_HOSTER,
-            limit=10
+            limit=buffer_limit
         )
 
         # Get download links for filtered releases
         release_ids = [r['id'] for r in filtered_releases]
-        logger.info(f"Getting download links for {len(release_ids)} releases...")
+        logger.info(f"Getting download links for {len(release_ids)} releases (buffer for dead links)...")
+        release_ids = [r['id'] for r in filtered_releases]
+        logger.info(f"Getting download links for {len(release_ids)} releases (buffer for dead links)...")
+        
+        # Add a small delay before starting download loop to avoid rate limits
+        time.sleep(2)
+        
         download_links = get_download_links(sb, release_ids)
 
-        # Debrid links using AllDebrid
-        debrided_links = debrid_links(download_links)
+        # Check availability AND get exact filenames in ONE batch AllDebrid call
+        # This is much more efficient than separate calls
+        from debrid import check_links_and_get_filenames
+        available_links, exact_filenames_by_link = check_links_and_get_filenames(download_links)
 
-        # Add debrided links to releases and filter out failed ones
+        # Add available links to releases and filter out dead ones
         valid_releases = []
         for release in filtered_releases:
-            debrided_link = debrided_links.get(release['id'])
-            if debrided_link:
-                download_link = download_links.get(release['id'])
+            download_link = available_links.get(release['id'])
+            if download_link:
+                # Get exact filename from batch result, or build name from metadata
+                exact_filename = exact_filenames_by_link.get(download_link)
                 
-                # Extract filename from debrided URL and decode URL encoding
-                try:
-                    parsed_url = urlparse(debrided_link)
-                    filename_encoded = parsed_url.path.split('/')[-1]
-                    name = unquote(filename_encoded)  # Decode %20, %28, etc.
-                except Exception as e:
-                    logger.warning(f"Could not extract filename: {e}")
-                    name = None
-                
+                name = build_release_name(
+                    media_title=media_title,
+                    quality=release.get('quality'),
+                    languages=release.get('languages', []),
+                    exact_filename=exact_filename  # Use pre-fetched filename from batch call
+                )
+
                 # Create clean DTO with only required fields
                 release_dto = {
                     'name': name,
                     'added': release.get('added'),
-                    'debrided_link': debrided_link,
                     'download_link': download_link,
                     'languages': release.get('languages', []),
                     'size': release.get('size'),
                     'subtitles': release.get('subtitles', [])
                 }
-                
+
                 valid_releases.append(release_dto)
+                
+                # Stop once we have enough valid releases
+                if len(valid_releases) >= target_limit:
+                    break
             else:
-                logger.debug(f"Excluding release {release['id']} - no valid debrided link")
+                logger.debug(f"Excluding release {release['id']} - link is dead or unavailable")
 
-        logger.info(f"✅ {len(valid_releases)} releases with valid debrided links")
-
+        logger.info(f"✅ {len(valid_releases)} releases with available links (from {len(filtered_releases)} candidates)")
+        
         result = {
             'success': True,
             'query': query,
@@ -766,19 +791,18 @@ def search_darkiworld(data: dict) -> dict:
             'authenticated': True
         }
 
-        # Close driver in background thread (non-blocking)
+        # Close driver in background thread so Flask can return response immediately
         def close_driver_async():
-            logger.info("Closing Chrome driver in background...")
             try:
                 close_driver()
-                logger.info("✓ Driver closed successfully")
+                logger.info("✓ Driver closed in background")
             except Exception as e:
                 logger.warning(f"Error closing driver: {e}")
 
         thread = threading.Thread(target=close_driver_async, daemon=True)
         thread.start()
 
-        # Return result immediately without waiting for driver to close
+        logger.info(f"Returning {len(valid_releases)} releases")
         return result
 
     except Exception as e:
@@ -786,7 +810,6 @@ def search_darkiworld(data: dict) -> dict:
 
         # Close driver in background thread on error too
         def close_driver_async():
-            logger.info("Closing Chrome driver in background after error...")
             try:
                 close_driver()
                 logger.info("✓ Driver closed after error")
@@ -796,7 +819,6 @@ def search_darkiworld(data: dict) -> dict:
         thread = threading.Thread(target=close_driver_async, daemon=True)
         thread.start()
 
-        # Return error immediately
         return {
             'success': False,
             'error': str(e),

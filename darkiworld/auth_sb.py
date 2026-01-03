@@ -14,35 +14,22 @@ COOKIES_FILE = os.path.join(os.path.dirname(__file__), 'cookies.json')
 
 
 def save_cookies(sb, filepath: str = COOKIES_FILE) -> None:
-    """Save essential cookies from SeleniumBase driver to JSON file
-
-    Essential cookies:
-    - SERVERID
-    - connected
-    - XSRF-TOKEN
-    - darkiworld_session
-    - remember_web_* (any cookie starting with remember_web_)
-    """
+    """Save ALL cookies from SeleniumBase driver to JSON file"""
     try:
+        # If filepath is a directory (Docker volume issue), remove it
+        if os.path.exists(filepath) and os.path.isdir(filepath):
+            logger.warning(f"⚠️ {filepath} is a directory, removing it...")
+            import shutil
+            shutil.rmtree(filepath)
+
         all_cookies = sb.driver.get_cookies()
 
-        # Filter only essential cookies
-        essential_cookies = []
-        essential_names = {'SERVERID', 'connected', 'XSRF-TOKEN', 'darkiworld_session'}
-
-        for cookie in all_cookies:
-            cookie_name = cookie['name']
-            # Keep if in essential list OR starts with remember_web_
-            if cookie_name in essential_names or cookie_name.startswith('remember_web_'):
-                essential_cookies.append(cookie)
-                logger.debug(f"Keeping cookie: {cookie_name}")
-
         with open(filepath, 'w') as f:
-            json.dump(essential_cookies, f, indent=2)
-        logger.info(f"✓ Saved {len(essential_cookies)} essential cookies to {filepath}")
+            json.dump(all_cookies, f, indent=2)
+        logger.info(f"✓ Saved {len(all_cookies)} cookies to {filepath}")
 
         # Log which cookies were saved
-        saved_names = [c['name'] for c in essential_cookies]
+        saved_names = [c['name'] for c in all_cookies]
         logger.debug(f"Saved cookies: {', '.join(saved_names)}")
 
     except Exception as e:
@@ -87,12 +74,16 @@ def is_authenticated(sb) -> bool:
     try:
         body_text = sb.get_text("body").lower()
         has_login_button = 'connexion' in body_text
+        has_login_text = 'Connectez-vous à votre compte' in body_text
 
         if has_login_button:
             logger.info("❌ Not authenticated - 'Connexion' button found")
             return False
+        elif has_login_text:
+            logger.info("❌ Not authenticated - 'Connectez-vous à votre compte' text found")
+            return False
         else:
-            logger.info("✓ Authenticated - no 'Connexion' button found")
+            logger.info("✓ Authenticated - no 'Connexion' or 'Connectez-vous à votre compte' text found")
             return True
 
     except Exception as e:
@@ -141,10 +132,63 @@ def login(sb, url: str, email: str, password: str) -> bool:
 
         # Wait for Cloudflare Turnstile to validate
         logger.info("Waiting for Cloudflare Turnstile validation...")
-        logger.info("(Waiting 5 seconds for Turnstile to auto-validate or manual click)")
 
-        # Simple wait - let Turnstile validate automatically or user can click manually
-        time.sleep(5)
+        turnstile_validated = False
+
+        # First, check if Turnstile iframe is present
+        try:
+            logger.info("Checking if Turnstile iframe is present on page...")
+            iframes = sb.driver.find_elements("tag name", "iframe")
+            logger.info(f"Found {len(iframes)} iframes on page")
+            for idx, iframe in enumerate(iframes):
+                src = iframe.get_attribute('src') or ''
+                logger.info(f"  Iframe {idx}: src={src[:100]}...")
+        except Exception as e:
+            logger.warning(f"Could not check iframes: {e}")
+
+        # Method 1: Try SeleniumBase's built-in captcha handler
+        try:
+            logger.info("Attempting to auto-click Turnstile using SeleniumBase UC mode...")
+            sb.uc_gui_click_captcha()
+            time.sleep(2)
+            logger.info("✓ Turnstile auto-clicked via UC mode")
+            turnstile_validated = True
+        except Exception as e:
+            logger.debug(f"UC mode auto-click failed: {e}")
+
+        # Method 2: Manual iframe interaction
+        if not turnstile_validated:
+            try:
+                logger.info("Trying manual Turnstile iframe interaction...")
+
+                # Wait for Turnstile iframe to appear (wait longer)
+                sb.wait_for_element('iframe[src*="turnstile"]', timeout=15)
+
+                # Switch to Turnstile iframe
+                iframe = sb.find_element('iframe[src*="turnstile"]')
+                sb.switch_to_frame(iframe)
+                logger.info("✓ Switched to Turnstile iframe")
+
+                # Click the Turnstile checkbox
+                sb.wait_for_element('input[type="checkbox"]', timeout=5)
+                sb.click('input[type="checkbox"]')
+                logger.info("✓ Clicked Turnstile checkbox")
+
+                # Switch back to main content
+                sb.switch_to_default_content()
+
+                # Wait for validation
+                time.sleep(3)
+                turnstile_validated = True
+
+            except Exception as e:
+                logger.warning(f"Manual iframe interaction failed: {e}")
+                sb.switch_to_default_content()
+
+        # Method 3: Fallback - wait for auto-validation
+        if not turnstile_validated:
+            logger.info("Fallback: Waiting 10 seconds for Turnstile to auto-validate...")
+            time.sleep(10)
 
         logger.info("✓ Proceeding with form submission...")
 
@@ -153,14 +197,74 @@ def login(sb, url: str, email: str, password: str) -> bool:
         sb.click("button[type='submit']")
         logger.info("✓ Login form submitted")
 
-        # Wait for navigation
+        # Wait for navigation and page to fully load
         logger.info("Waiting for login to complete...")
-        time.sleep(2)
+        time.sleep(3)
+
+        # Wait for page to be fully loaded
+        try:
+            sb.wait_for_ready_state_complete(timeout=10)
+            logger.info("✓ Page fully loaded after login")
+        except Exception as e:
+            logger.warning(f"Could not wait for ready state: {e}")
+
+        # Wait for authentication cookies to be created after login
+        logger.info("Waiting for authentication cookies to settle...")
+        max_wait = 15
+        cookies_ready = False
+        cookies = []
+
+        for i in range(max_wait):
+            try:
+                cookies = sb.driver.get_cookies()
+                cookie_names = [c['name'] for c in cookies]
+
+                # Wait for critical authentication cookies
+                has_connected = 'connected' in cookie_names
+                has_remember = any(name.startswith('remember_web_') for name in cookie_names)
+                has_session = 'darkiworld_session' in cookie_names
+
+                if has_connected and has_remember and has_session:
+                    logger.info(f"✓ Authentication cookies found after {i+1}s")
+                    cookies_ready = True
+
+                    # Log all cookies NOW while driver is still connected
+                    try:
+                        logger.info(f"📋 Total cookies after login: {len(cookies)}")
+                        for cookie in cookies:
+                            logger.info(f"  Cookie: {cookie['name']} = {cookie['value'][:50]}... (domain: {cookie.get('domain', 'N/A')})")
+                    except Exception as e:
+                        logger.warning(f"Could not log cookies: {e}")
+
+                    break
+
+                if i % 2 == 0:
+                    cookie_status = f"connected={has_connected}, remember={has_remember}, session={has_session}"
+                    logger.debug(f"Waiting for auth cookies... ({i+1}s, total: {len(cookies)}, {cookie_status})")
+
+                time.sleep(1)
+            except Exception as e:
+                logger.debug(f"Error checking cookies: {e}")
+                time.sleep(1)
+
+        if not cookies_ready:
+            cookie_names = [c['name'] for c in cookies]
+            logger.warning(f"⚠️ Timeout waiting for auth cookies (found {len(cookies)}): {', '.join(cookie_names)}")
+            logger.warning("⚠️ Proceeding anyway but authentication may fail...")
+
+        # Save ALL cookies BEFORE reload to avoid driver disconnection
+        if cookies_ready:
+            logger.info("Saving all cookies before reload...")
+            save_cookies(sb)
+
+        # Reload page to ensure cookies are persisted
+        logger.info("Reloading page to ensure cookies are persisted...")
+        sb.open(url)
+        time.sleep(1)
 
         # Check if login was successful
         if is_authenticated(sb):
             logger.info("✅ Login successful!")
-            save_cookies(sb)
             return True
         else:
             logger.error("❌ Login failed - still seeing 'Connexion' button")

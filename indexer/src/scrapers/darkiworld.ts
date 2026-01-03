@@ -10,7 +10,6 @@ import { config } from '../config.js';
 interface DarkiworldRelease {
   name?: string;
   added?: string;
-  debrided_link: string;
   download_link: string;
   languages?: string[];
   size?: number;
@@ -45,7 +44,7 @@ export class DarkiworldPremiumScraper implements BaseScraper {
       const url = `${this.baseUrl}/search?name=${encodeURIComponent(query)}`;
       console.log(`[DarkiworldPremium] Calling service: ${url}`);
       
-      const response = await fetchJson<DarkiworldSearchResponse>(url, { timeout: 45000 });
+      const response = await fetchJson<DarkiworldSearchResponse>(url, { timeout: 60000 });
       
       if (!response.success) {
         console.error(`[DarkiworldPremium] Service returned error: ${response.error || 'Unknown error'}`);
@@ -90,7 +89,7 @@ export class DarkiworldPremiumScraper implements BaseScraper {
 
     return {
       title,
-      link: release.debrided_link, // Use debrided link (already processed by AllDebrid)
+      link: release.download_link, // Direct download link
       size: release.size,
       quality,
       language,

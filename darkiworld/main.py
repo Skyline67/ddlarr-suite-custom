@@ -63,7 +63,7 @@ if __name__ == '__main__':
     logger.info(f"Allowed hosters: {ALLOWED_HOSTER if ALLOWED_HOSTER else 'ALL (no filter)'}")
 
     try:
-        app.run(host='0.0.0.0', port=PORT, debug=DEBUG, use_reloader=False)
+        app.run(host='0.0.0.0', port=PORT, debug=DEBUG, use_reloader=False, threaded=False)
     except KeyboardInterrupt:
         logger.info("\n🛑 Keyboard interrupt - shutting down...")
     finally:

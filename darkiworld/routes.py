@@ -43,7 +43,9 @@ def search():
         logger.info(f"Search endpoint called with query: '{query}'")
         result = search_darkiworld({'name': query})
 
+        logger.info(f"Search result success: {result.get('success')}, releases: {len(result.get('releases', []))}")
         status_code = 200 if result.get('success') else 400
+        logger.info(f"Returning response with status {status_code}")
         return jsonify(result), status_code
 
     except Exception as e:
