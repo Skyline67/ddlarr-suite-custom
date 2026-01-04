@@ -41,7 +41,7 @@ function toQBTorrentInfo(download: Download): QBTorrentInfo {
     name: download.name,
     size: download.totalSize,
     progress,
-    dlspeed: download.downloadSpeed,
+    dlspeed: download.state === 'completed' ? 0 : download.downloadSpeed,
     upspeed: 0,
     priority: download.priority,
     num_seeds: 0,
