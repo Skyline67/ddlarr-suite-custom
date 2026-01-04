@@ -162,7 +162,7 @@ def filter_and_sort_releases(releases: list, allowed_hosters: list, limit: int =
 
 def get_download_links(sb, release_ids: list) -> dict:
     """
-    Get download links for releases by calling the API
+    Get download links for releases by calling the API in PARALLEL using Promise.all()
 
     Args:
         sb: SeleniumBase instance with cookies
@@ -171,25 +171,29 @@ def get_download_links(sb, release_ids: list) -> dict:
     Returns:
         Dictionary mapping release_id -> download link
     """
-    links = {}
-
-    for release_id in release_ids:
-        try:
-            logger.info(f"Getting download link for release {release_id}...")
-
-            # Use JavaScript fetch to call the API with existing cookies (using sb instead of driver)
-            # IMPORTANT: Manually extract XSRF-TOKEN from cookies and add to headers
-            # This is often required for Laravel implementations where fetch doesn't auto-add the header
-            result = sb.execute_script(f"""
-                function getCookie(name) {{
-                    const value = `; ${{document.cookie}}`;
-                    const parts = value.split(`; ${{name}}=`);
-                    if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
-                }}
-                
-                const xsrfToken = getCookie('XSRF-TOKEN');
-                
-                return fetch('/api/v1/liens/{release_id}/download', {{
+    if not release_ids:
+        return {}
+    
+    logger.info(f"🚀 Getting download links for {len(release_ids)} releases in PARALLEL...")
+    
+    try:
+        # Convert Python list to JavaScript array string
+        release_ids_js = json.dumps(release_ids)
+        
+        # Use Promise.all to fetch all links in parallel - MUCH faster!
+        # Cookies are automatically included by the browser for same-origin fetch requests
+        result = sb.execute_script(f"""
+            function getCookie(name) {{
+                const value = `; ${{document.cookie}}`;
+                const parts = value.split(`; ${{name}}=`);
+                if (parts.length === 2) return decodeURIComponent(parts.pop().split(';').shift());
+            }}
+            
+            const xsrfToken = getCookie('XSRF-TOKEN');
+            const releaseIds = {release_ids_js};
+            
+            const promises = releaseIds.map(releaseId => 
+                fetch(`/api/v1/liens/${{releaseId}}/download`, {{
                     method: 'POST',
                     headers: {{
                         'Content-Type': 'application/json',
@@ -199,27 +203,42 @@ def get_download_links(sb, release_ids: list) -> dict:
                     body: JSON.stringify({{ token: "" }})
                 }})
                 .then(response => response.json())
-                .then(data => data)
-                .catch(error => ({{ error: error.toString() }}));
-            """)
-
-            # Log full response for debugging
-            logger.info(f"API Response for release {release_id}: {result}")
+                .then(data => ({{ id: releaseId, data: data }}))
+                .catch(error => ({{ id: releaseId, error: error.toString() }}))
+            );
             
-            if result and 'lien' in result:
-                download_link = result['lien'].get('lien')
+            return Promise.all(promises);
+        """)
+        
+        links = {}
+        success_count = 0
+        
+        for item in result:
+            release_id = item.get('id')
+            data = item.get('data', {})
+            error = item.get('error')
+            
+            if error:
+                logger.warning(f"⚠️ Error for release {release_id}: {error}")
+                continue
+            
+            if 'lien' in data:
+                download_link = data['lien'].get('lien')
                 if download_link:
                     links[release_id] = download_link
-                    logger.info(f"✓ Got download link for release {release_id}")
+                    success_count += 1
+                    logger.debug(f"✓ Got link for release {release_id}")
                 else:
                     logger.warning(f"⚠️ No download link in response for release {release_id}")
             else:
-                logger.warning(f"⚠️ Failed to get download link for release {release_id}: {result}")
-
-        except Exception as e:
-            logger.error(f"Error getting download link for release {release_id}: {e}")
-
-    return links
+                logger.warning(f"⚠️ Failed to get link for release {release_id}: {data}")
+        
+        logger.info(f"✅ Got {success_count}/{len(release_ids)} download links in parallel")
+        return links
+        
+    except Exception as e:
+        logger.error(f"Error getting download links in parallel: {e}")
+        return {}
 
 
 def scrape_darkiworld(data: dict = None) -> dict:
