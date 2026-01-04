@@ -9,6 +9,7 @@ For Docker: uses parent .env file
 import os
 import logging
 import requests
+import time
 from typing import Optional
 from dotenv import load_dotenv
 
@@ -80,7 +81,6 @@ def get_darkiworld_url() -> str:
 
     The resolved URL is cached for 1 hour, then re-resolved.
     """
-    import time
     global _resolved_url_cache, _cache_timestamp
 
     # Priority 1: Environment variable (if not empty)

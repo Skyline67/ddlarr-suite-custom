@@ -21,13 +21,17 @@ def health():
 @api.route('/search', methods=['GET'])
 def search():
     """
-    Search endpoint - searches DarkiWorld and clicks first result
+    Search endpoint - searches DarkiWorld
 
     Parameters:
     - name or query (required): Search query
+    - type (optional): Media type (movie, series)
+    - season (optional): Season number for series
+    - ep (optional): Episode number for series
 
     Example:
     GET /search?name=Avatar
+    GET /search?name=Stranger Things&type=series&season=1&ep=1
     """
     try:
         data = request.args.to_dict()

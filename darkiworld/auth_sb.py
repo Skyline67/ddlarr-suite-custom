@@ -7,6 +7,7 @@ import os
 import json
 import time
 import logging
+import shutil
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,6 @@ def save_cookies(sb, filepath: str = COOKIES_FILE) -> None:
         # If filepath is a directory (Docker volume issue), remove it
         if os.path.exists(filepath) and os.path.isdir(filepath):
             logger.warning(f"⚠️ {filepath} is a directory, removing it...")
-            import shutil
             shutil.rmtree(filepath)
 
         all_cookies = sb.driver.get_cookies()

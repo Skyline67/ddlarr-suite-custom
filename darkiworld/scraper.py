@@ -20,6 +20,8 @@ from config import get_darkiworld_url, ALLOWED_HOSTER, DARKIWORLD_EMAIL, DARKIWO
 from driver_sb import get_driver, close_driver
 from auth_sb import ensure_authenticated
 from utils import parse_relative_date, build_release_name
+from debrid import check_links_and_get_filenames
+
 logger = logging.getLogger(__name__)
 
 
@@ -514,7 +516,10 @@ def search_darkiworld(data: dict) -> dict:
     Search function for darkiworld - uses direct search URL and API
     
     Args:
-        data: Dictionary with 'name' (query) and optional 'type' ('movie' or 'series')
+        data: Dictionary with 'name' (query)
+        type (optional): Media type (movie, series)
+        season (optional): Season number for series
+        ep (optional): Episode number for series
     """
     query = data.get('name', data.get('query', ''))
     media_type = data.get('type', 'movie')  # Default to 'movie', can be 'series'
@@ -762,7 +767,6 @@ def search_darkiworld(data: dict) -> dict:
 
         # Check availability AND get exact filenames in ONE batch AllDebrid call
         # This is much more efficient than separate calls
-        from debrid import check_links_and_get_filenames
         available_links, exact_filenames_by_link = check_links_and_get_filenames(download_links)
 
         # Add available links to releases and filter out dead ones
