@@ -55,7 +55,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Pre-download the UC ChromeDriver during build (instead of first API call)
 RUN python -c "from seleniumbase import SB; SB(uc=True, headless=True).__enter__()" || true
 
-COPY *.py .
+COPY *.py ./
 COPY entrypoint.sh .
 RUN chmod +x entrypoint.sh
 

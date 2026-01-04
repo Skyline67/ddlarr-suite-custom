@@ -8,12 +8,12 @@ from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
 from config import ALLDEBRID_API_KEY, ALLDEBRID_API_URL
+from cache import debrid_cache
 
 logger = logging.getLogger(__name__)
 
 # AllDebrid API endpoints
 ALLDEBRID_INFOS_URL = 'https://api.alldebrid.com/v4/link/infos'
-
 
 def check_link_availability(link: str) -> bool:
     """
@@ -86,15 +86,43 @@ def check_links_and_get_filenames(links: dict, chunk_size: int = 10) -> tuple[di
     if not links:
         return {}, {}
 
+    # Check cache first for each link
+    cached_available = {}
+    cached_filenames = {}
+    uncached_links = {}
+    
+    for release_id, link in links.items():
+        cached = debrid_cache.get(link)
+        if cached is not None:
+            # cached is tuple: (is_available, filename_or_none)
+            is_available, filename = cached
+            if is_available:
+                cached_available[release_id] = link
+                if filename:
+                    cached_filenames[link] = filename
+        else:
+            uncached_links[release_id] = link
+    
+    if cached_available:
+        logger.info(f"✅ Cache hit for {len(cached_available)}/{len(links)} links")
+    
+    # If all links are cached, return immediately
+    if not uncached_links:
+        logger.info(f"✅ All {len(links)} links were cached, skipping AllDebrid API")
+        return cached_available, cached_filenames
+    
+    logger.info(f"🔍 Checking {len(uncached_links)} uncached links via AllDebrid...")
+
     # Try using AllDebrid batch API first (much more efficient)
     if ALLDEBRID_API_KEY:
         # Create reverse mapping: link -> release_id
-        link_to_id = {link: release_id for release_id, link in links.items()}
-        links_list = list(links.values())
+        link_to_id = {link: release_id for release_id, link in uncached_links.items()}
+        links_list = list(uncached_links.values())
         
         # Split into chunks
         chunks = [links_list[i:i + chunk_size] for i in range(0, len(links_list), chunk_size)]
-        logger.info(f"🔍 Checking {len(links)} links via AllDebrid in {len(chunks)} chunk(s) of max {chunk_size}...")
+        logger.info(f"🔍 Checking {len(uncached_links)} links via AllDebrid in {len(chunks)} chunk(s) of max {chunk_size}...")
+
         
         all_available_links = {}
         all_exact_filenames = {}
@@ -133,6 +161,8 @@ def check_links_and_get_filenames(links: dict, chunk_size: int = 10) -> tuple[di
                             error_code = error.get('code')
                             if error_code == 'LINK_DOWN':
                                 logger.debug(f"Link is dead: {link[:30]}...")
+                                # Cache dead link as unavailable
+                                debrid_cache.set(link, (False, None))
                             else:
                                 logger.warning(f"Link error {error_code}: {link[:30]}...")
                             continue
@@ -141,9 +171,13 @@ def check_links_and_get_filenames(links: dict, chunk_size: int = 10) -> tuple[di
                             release_id = link_to_id[link]
                             chunk_available[release_id] = link
                             
+                            name_without_ext = None
                             if filename:
                                 name_without_ext = filename.rsplit('.', 1)[0] if '.' in filename else filename
                                 chunk_filenames[link] = name_without_ext
+                            
+                            # Cache available link with filename
+                            debrid_cache.set(link, (True, name_without_ext))
                 else:
                     # Batch failed, add all links to failed list for fallback
                     chunk_failed = chunk_links
@@ -175,11 +209,24 @@ def check_links_and_get_filenames(links: dict, chunk_size: int = 10) -> tuple[di
             fallback_available, _ = _check_links_parallel(fallback_links)
             all_available_links.update(fallback_available)
         
+        # Merge with cached results
+        all_available_links.update(cached_available)
+        all_exact_filenames.update(cached_filenames)
+        
         logger.info(f"✅ {len(all_available_links)}/{len(links)} links available, {len(all_exact_filenames)} filenames retrieved")
         return all_available_links, all_exact_filenames
     
     # No AllDebrid API key: use parallel HTTP fallback
-    return _check_links_parallel(links)
+    fallback_available, _ = _check_links_parallel(uncached_links)
+    
+    # Cache fallback results (no filenames available)
+    for release_id, link in uncached_links.items():
+        is_available = release_id in fallback_available
+        debrid_cache.set(link, (is_available, None))
+    
+    # Merge with cached
+    fallback_available.update(cached_available)
+    return fallback_available, cached_filenames
 
 
 def _check_links_parallel(links: dict) -> tuple[dict, dict]:
