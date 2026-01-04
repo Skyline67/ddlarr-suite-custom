@@ -129,19 +129,21 @@ docker compose --profile qbittorrent up -d
 3. Configurer :
    - **Name** : DDL-qBittorrent
    - **Host** : `<IP>` (IP du serveur ddl-qbittorrent)
-   - **Port** : `8080`
+   - **Port** : `8080` (ou votre valeur de `QBITTORRENT_PORT`)
    - **Username** : `admin` (ou votre valeur de `QB_USERNAME`)
    - **Password** : `adminadmin` (ou votre valeur de `QB_PASSWORD`)
    - **Category** : `radarr` ou `sonarr` (optionnel)
 4. Cliquer sur **Test** puis **Save**
 
-> **Interface Web** : Accessible sur `http://<IP>:8080/` pour voir l'état des téléchargements
+> **Mappages de chemins distants** : Si Sonarr/Radarr et ddl-qbittorrent ne partagent pas le même système de fichiers, configurez les "Remote Path Mappings" dans Settings > Download Clients. Par exemple, si ddl-qbittorrent télécharge dans `/downloads` mais que Sonarr voit ce dossier comme `/mnt/downloads`, ajoutez un mapping : Host=`<IP ddl-qbittorrent>`, Remote Path=`/downloads`, Local Path=`/mnt/downloads`.
+
+> **Interface Web** : Accessible sur `http://<IP>:<QBITTORRENT_PORT>/` pour voir l'état des téléchargements (port 8080 par défaut)
 
 ### Variables d'environnement DDL-qBittorrent
 
 | Variable | Description | Défaut |
 |----------|-------------|--------|
-| `QB_PORT` | Port du service | 8080 |
+| `QBITTORRENT_PORT` | Port du service | 8080 |
 | `QB_USERNAME` | Nom d'utilisateur | admin |
 | `QB_PASSWORD` | Mot de passe | adminadmin |
 | `DOWNLOAD_PATH` | Dossier de destination des téléchargements | /downloads |
