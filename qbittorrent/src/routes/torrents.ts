@@ -60,7 +60,9 @@ function toQBTorrentInfo(download: Download): QBTorrentInfo {
     save_path: download.savePath,
     added_on: Math.floor(download.addedAt / 1000),
     completion_on: download.completedAt ? Math.floor(download.completedAt / 1000) : -1,
-    tracker: '',
+    tracker: download.state === 'error' && download.errorMessage
+      ? `DDL Error: ${download.errorMessage}`
+      : '',
     dl_limit: 0,
     up_limit: 0,
     downloaded: effectiveDownloaded,
