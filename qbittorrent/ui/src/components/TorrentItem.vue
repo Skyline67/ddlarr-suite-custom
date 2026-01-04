@@ -11,20 +11,21 @@ const store = useTorrentsStore()
 
 const progressPercent = computed(() => {
   // Force 100% for completed torrents
-  if (props.torrent.state === 'uploading') return 100
+  if (props.torrent.state === 'uploading' || props.torrent.state === 'stoppedUP') return 100
   return Math.round(props.torrent.progress * 100)
 })
 
 const displayDownloaded = computed(() => {
   // For completed, show total size as downloaded
-  if (props.torrent.state === 'uploading') return props.torrent.size
+  if (props.torrent.state === 'uploading' || props.torrent.state === 'stoppedUP') return props.torrent.size
   return props.torrent.downloaded
 })
 
 const statusColor = computed(() => {
   switch (props.torrent.state) {
     case 'downloading': return 'bg-blue-500'
-    case 'uploading': return 'bg-green-500'
+    case 'uploading':
+    case 'stoppedUP': return 'bg-green-500'
     case 'pausedDL':
     case 'pausedUP': return 'bg-yellow-500'
     case 'queuedDL': return 'bg-gray-400'
@@ -41,7 +42,8 @@ const statusLabel = computed(() => {
   }
   switch (props.torrent.state) {
     case 'downloading': return 'Téléchargement'
-    case 'uploading': return 'Terminé'
+    case 'uploading':
+    case 'stoppedUP': return 'Terminé'
     case 'pausedDL':
     case 'pausedUP': return 'En pause'
     case 'queuedDL': return 'En attente'
@@ -152,7 +154,7 @@ async function handleDelete() {
     </div>
 
     <!-- File path when completed -->
-    <div v-if="torrent.state === 'uploading' && torrent.content_path" class="text-xs text-gray-400 mb-2 truncate" :title="torrent.content_path">
+    <div v-if="(torrent.state === 'uploading' || torrent.state === 'stoppedUP') && torrent.content_path" class="text-xs text-gray-400 mb-2 truncate" :title="torrent.content_path">
       📁 {{ torrent.content_path }}
     </div>
 
