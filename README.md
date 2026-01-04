@@ -242,6 +242,32 @@ docker compose --profile blackhole up -d
 
 > Remplacer `<IP>` par l'adresse du serveur (ex: `192.168.1.100`, `localhost`, ou votre domaine)
 
+### Filtrage par hébergeur
+
+Vous pouvez filtrer les résultats pour n'afficher que les liens d'un ou plusieurs hébergeurs spécifiques. Cela permet de ne garder que les hébergeurs supportés par votre service debrid.
+
+**Via le chemin URL :**
+```
+http://<IP>:9117/api/wawacity/1fichier/
+http://<IP>:9117/api/wawacity/1fichier,rapidgator/
+http://<IP>:9117/api/zonetelecharger/turbobit/
+```
+
+**Via le paramètre query :**
+```
+http://<IP>:9117/api/wawacity/?hoster=1fichier
+http://<IP>:9117/api/wawacity/?hoster=1fichier,rapidgator
+```
+
+**Hébergeurs courants :**
+- `1fichier`
+- `turbobit`
+- `rapidgator`
+- `uptobox`
+- `nitroflare`
+
+> **Astuce** : Dans Radarr/Sonarr, créez plusieurs indexeurs avec différents hébergeurs pour prioriser certains services. Par exemple, un indexeur `DDL Wawacity - 1fichier` et un autre `DDL Wawacity - turbobit`.
+
 ### Fonctionnement du flux complet
 
 ```
