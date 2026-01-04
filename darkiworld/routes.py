@@ -3,63 +3,15 @@ Flask routes module for Darkiworld Scraper
 Defines all API endpoints.
 """
 
-import re
 import logging
 from flask import Blueprint, request, jsonify
 from scraper import scrape_darkiworld, search_darkiworld
-from cache import search_cache, search_guard
+from cache import search_cache, search_guard, generate_cache_key, normalize_query
 
 logger = logging.getLogger(__name__)
 
 # Create Blueprint for API routes
 api = Blueprint('api', __name__)
-
-
-def normalize_query(query: str, season: str = None, ep: str = None) -> str:
-    """
-    Normalize search query by removing redundant season/episode indicators.
-    
-    When season/ep params are provided, remove patterns like:
-    - "S2", "S02", "S2E5", "S02E05"
-    - "Season 2", "Season 02"
-    - "2nd Season", "1st Season", "3rd Season"
-    - "Saison 2" (French)
-    
-    Args:
-        query: Original search query
-        season: Season number (if provided separately)
-        ep: Episode number (if provided separately)
-        
-    Returns:
-        Cleaned query string
-    """
-    if not season:
-        return query.strip()
-    
-    original = query
-    
-    # Remove patterns like "S2", "S02", "S2E5", "S02E05"
-    query = re.sub(r'\bS\d{1,2}(E\d{1,2})?\b', '', query, flags=re.IGNORECASE)
-    
-    # Remove "Season X" or "Season XX"
-    query = re.sub(r'\bSeason\s*\d{1,2}\b', '', query, flags=re.IGNORECASE)
-    
-    # Remove "Saison X" (French)
-    query = re.sub(r'\bSaison\s*\d{1,2}\b', '', query, flags=re.IGNORECASE)
-    
-    # Remove "Xst/Xnd/Xrd/Xth Season" (e.g., "2nd Season", "1st Season")
-    query = re.sub(r'\b\d{1,2}(?:st|nd|rd|th)\s+Season\b', '', query, flags=re.IGNORECASE)
-    
-    # Remove year in parentheses if at the end (e.g., "(2024)")
-    query = re.sub(r'\s*\(\d{4}\)\s*$', '', query)
-    
-    # Clean up multiple spaces and trim
-    query = re.sub(r'\s+', ' ', query).strip()
-    
-    if query != original:
-        logger.info(f"🧹 Normalized query: '{original}' -> '{query}'")
-    
-    return query
 
 
 @api.route('/health', methods=['GET'])
@@ -97,12 +49,28 @@ def search():
         season = data.get('season')  # Optional: season number for series
         ep = data.get('ep')  # Optional: episode number for series
         
-        # Normalize query to remove redundant season/episode indicators
-        # e.g. "Jujutsu Kaisen 2nd Season" -> "Jujutsu Kaisen" (when season=2)
-        normalized_query = normalize_query(query, season, ep)
+        # VALIDATION: Reject series/animes searches without season parameter
+        # Sonarr sends many useless queries like "01", "02" for anime episode searches
+        # These are not useful for our scraper - we need proper title + season
+        if media_type in ('series', 'animes') and not season:
+            logger.warning(f"🚫 Rejecting {media_type} search without season parameter: '{query}'")
+            return jsonify({
+                'success': False,
+                'error': f'Season parameter is required for {media_type} searches',
+                'releases': []
+            }), 400
+        
+        # Convert season/ep to int for cache key generation (if provided)
+        season_int = int(season) if season else None
+        ep_int = int(ep) if ep else None
+        
+        # Normalize query to remove redundant season/episode/suffix indicators
+        # e.g. "Jujutsu Kaisen TV" -> "jujutsu kaisen" (when season=1)
+        #      "Jujutsu Kaisen 2nd Season" -> "jujutsu kaisen" (when season=2)
+        normalized_query = normalize_query(query, season_int)
         
         # Generate cache key from NORMALIZED query params
-        cache_key = f"{normalized_query}|{media_type}|{season or ''}|{ep or ''}"
+        cache_key = generate_cache_key(query, media_type, season_int, ep_int)
         
         # Check cache first
         cached_result = search_cache.get(cache_key)

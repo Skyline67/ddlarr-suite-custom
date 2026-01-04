@@ -1,14 +1,100 @@
 """
 TTL-based cache module for Darkiworld Scraper
 Prevents redundant API calls from Sonarr's double-request behavior.
+Includes query normalization to handle Sonarr's variations in search terms.
 """
 
+import re
 import time
 import threading
 import logging
 from typing import Any, Optional, Callable
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_query(query: str, season: Optional[int] = None) -> str:
+    """
+    Normalize a search query by removing common suffixes and variations.
+    This ensures that queries like "Jujutsu Kaisen TV" and "Jujutsu Kaisen" 
+    produce the same cache key when season is specified.
+    
+    Args:
+        query: The search query to normalize
+        season: If season is already specified as parameter, remove season references from query
+        
+    Returns:
+        Normalized query string (lowercase, trimmed)
+    """
+    if not query:
+        return ""
+    
+    # Start with lowercase and trimmed
+    normalized = query.strip().lower()
+    
+    # Patterns to remove (order matters - more specific first)
+    # These are common suffixes added by Sonarr/media managers
+    patterns_to_remove = [
+        # Season patterns (only remove if season param is already provided)
+        r'\s+saison\s*\d+',          # "Saison 1", "Saison 2"
+        r'\s+season\s*\d+',          # "Season 1", "Season 2"
+        r'\s+s\d+',                  # "S1", "S2", "S01"
+        r'\s+\d+(st|nd|rd|th)\s+season',  # "1st Season", "2nd Season"
+        
+        # Common media type suffixes
+        r'\s+tv$',                   # "TV" at end
+        r'\s+\(tv\)$',               # "(TV)" at end
+        r'\s+\[tv\]$',               # "[TV]" at end
+        r'\s+serie$',                # "Serie" at end
+        r'\s+series$',               # "Series" at end
+        r'\s+the\s+series$',         # "The Series" at end
+        r'\s+anime$',                # "Anime" at end
+        r'\s+vostfr$',               # "VOSTFR" at end
+        r'\s+vf$',                   # "VF" at end
+        r'\s+french$',               # "French" at end
+        r'\s+multi$',                # "Multi" at end
+        
+        # Year patterns (often appended by Sonarr)
+        r'\s+\(\d{4}\)$',            # "(2023)" at end
+        r'\s+\[\d{4}\]$',            # "[2023]" at end
+        r'\s+\d{4}$',                # "2023" at end (be careful with this one)
+    ]
+    
+    # Apply all patterns
+    for pattern in patterns_to_remove:
+        normalized = re.sub(pattern, '', normalized, flags=re.IGNORECASE)
+    
+    # Clean up multiple spaces and trim again
+    normalized = re.sub(r'\s+', ' ', normalized).strip()
+    
+    return normalized
+
+
+def generate_cache_key(query: str, media_type: str, season: Optional[int] = None, 
+                       episode: Optional[int] = None) -> str:
+    """
+    Generate a normalized cache key for search requests.
+    
+    Args:
+        query: Search query
+        media_type: Type of media (animes, films, series)
+        season: Optional season number
+        episode: Optional episode number
+        
+    Returns:
+        Normalized cache key string
+    """
+    normalized = normalize_query(query, season)
+    parts = [normalized, media_type]
+    
+    if season is not None:
+        parts.append(str(season))
+    if episode is not None:
+        parts.append(str(episode))
+    
+    key = "|".join(parts)
+    logger.debug(f"[CacheKey] '{query}' -> '{normalized}' -> key: {key}")
+    return key
 
 
 class TTLCache:
