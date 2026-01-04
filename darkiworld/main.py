@@ -15,8 +15,7 @@ from config import DARKIWORLD_URL, ALLOWED_HOSTER, PORT, DEBUG
 from driver_sb import close_driver
 from routes import api
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Logger instance (logging already configured in config.py)
 logger = logging.getLogger(__name__)
 
 # Create Flask app

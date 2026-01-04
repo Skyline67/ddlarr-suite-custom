@@ -16,89 +16,11 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-from config import DARKIWORLD_URL, ALLOWED_HOSTER, DARKIWORLD_EMAIL, DARKIWORLD_PASSWORD
+from config import get_darkiworld_url, ALLOWED_HOSTER, DARKIWORLD_EMAIL, DARKIWORLD_PASSWORD, DEBUG
 from driver_sb import get_driver, close_driver
 from auth_sb import ensure_authenticated
 from utils import parse_relative_date, build_release_name
-from debrid import check_links_availability
-
 logger = logging.getLogger(__name__)
-
-
-def parse_releases_table(driver) -> list:
-    """
-    Parse the releases table from the download page
-    Returns a list of release dictionaries with details
-    """
-    releases = []
-
-    try:
-        # Find the table
-        table = driver.find_element(By.CSS_SELECTOR, 'table[role="grid"]')
-
-        # Find all rows in tbody (skip header)
-        rows = table.find_elements(By.CSS_SELECTOR, 'tbody > tr[role="row"]')
-
-        logger.info(f"Found {len(rows)} rows in releases table")
-
-        for idx, row in enumerate(rows):
-            try:
-                release = {}
-
-                # Extract data from each column
-                cells = row.find_elements(By.CSS_SELECTOR, 'td[role="gridcell"]')
-
-                if len(cells) < 7:
-                    logger.warning(f"Row {idx} has {len(cells)} cells, expected 7")
-                    continue
-
-                # Column 0: Taille (Size)
-                size_text = cells[0].text.strip()
-                release['size'] = size_text if size_text and size_text != '-' else None
-
-                # Column 1: Qualité (Quality)
-                quality_elem = cells[1].find_elements(By.CSS_SELECTOR, 'div.flex-auto')
-                release['quality'] = quality_elem[0].text.strip() if quality_elem else None
-
-                # Column 2: Langues (Languages)
-                lang_elems = cells[2].find_elements(By.CSS_SELECTOR, 'div.flex-auto')
-                languages = [elem.text.strip() for elem in lang_elems]
-
-                # Check for "+X plus" button
-                plus_btn = cells[2].find_elements(By.CSS_SELECTOR, 'button')
-                if plus_btn:
-                    plus_text = plus_btn[0].text.strip()
-                    languages.append(plus_text)
-
-                release['languages'] = languages if languages else []
-
-                # Column 3: Sous-titres (Subtitles)
-                sub_elems = cells[3].find_elements(By.CSS_SELECTOR, 'div.flex-auto')
-                subtitles = [elem.text.strip() for elem in sub_elems]
-                release['subtitles'] = subtitles if subtitles else []
-
-                # Column 5: Ajouté (Added date)
-                release['added'] = cells[5].text.strip()
-
-                # Column 6: Actions (Download host)
-                host_img = cells[6].find_elements(By.CSS_SELECTOR, 'button img')
-                if host_img:
-                    host_alt = host_img[0].get_attribute('alt')
-                    release['host'] = host_alt
-                else:
-                    release['host'] = None
-
-                releases.append(release)
-                logger.debug(f"Parsed release {idx + 1}: {release['quality']} - {release['host']}")
-
-            except Exception as e:
-                logger.warning(f"Error parsing row {idx}: {e}")
-                continue
-
-    except Exception as e:
-        logger.error(f"Error parsing releases table: {e}")
-
-    return releases
 
 
 def filter_and_sort_releases(releases: list, allowed_hosters: list, limit: int = 10) -> list:
@@ -251,11 +173,12 @@ def scrape_darkiworld(data: dict = None) -> dict:
     try:
         sb = get_driver()
         driver = sb.driver  # Get underlying Selenium driver for compatibility
-        logger.info(f"Opening {DARKIWORLD_URL}")
+        darkiworld_url = get_darkiworld_url()
+        logger.info(f"Opening {darkiworld_url}")
 
         # Ensure authentication (load cookies or login if necessary)
         logger.info("Authenticating...")
-        authenticated = ensure_authenticated(sb, DARKIWORLD_URL, DARKIWORLD_EMAIL, DARKIWORLD_PASSWORD)
+        authenticated = ensure_authenticated(sb, darkiworld_url, DARKIWORLD_EMAIL, DARKIWORLD_PASSWORD)
 
         if not authenticated:
             logger.error("❌ Authentication failed - cannot proceed")
@@ -413,42 +336,43 @@ def scrape_darkiworld(data: dict = None) -> dict:
         except Exception as e:
             logger.debug(f"Could not check content length: {e}")
 
-        # Diagnostic logs for JavaScript detection
-        try:
-            js_checks = driver.execute_script("""
-                return {
-                    webdriver: navigator.webdriver,
-                    plugins: navigator.plugins.length,
-                    languages: navigator.languages,
-                    platform: navigator.platform,
-                    userAgent: navigator.userAgent,
-                    hasChrome: typeof window.chrome !== 'undefined',
-                    documentReady: document.readyState,
-                    vendor: navigator.vendor,
-                    hardwareConcurrency: navigator.hardwareConcurrency,
-                    deviceMemory: navigator.deviceMemory,
-                    connection: navigator.connection ? navigator.connection.effectiveType : 'N/A',
-                    // Check for automation detection properties
-                    hasAutomationProperty: typeof navigator.webdriver !== 'undefined',
-                    hasCDC: typeof window.cdc_adoQpoasnfa76pfcZLmcfl_Array !== 'undefined',
-                    hasCallPhantom: typeof window.callPhantom !== 'undefined',
-                    hasPhantom: typeof window._phantom !== 'undefined'
-                };
-            """)
-            logger.info(f"JavaScript environment check: {js_checks}")
+        # Diagnostic logs for JavaScript detection (only in DEBUG mode)
+        if DEBUG:
+            try:
+                js_checks = driver.execute_script("""
+                    return {
+                        webdriver: navigator.webdriver,
+                        plugins: navigator.plugins.length,
+                        languages: navigator.languages,
+                        platform: navigator.platform,
+                        userAgent: navigator.userAgent,
+                        hasChrome: typeof window.chrome !== 'undefined',
+                        documentReady: document.readyState,
+                        vendor: navigator.vendor,
+                        hardwareConcurrency: navigator.hardwareConcurrency,
+                        deviceMemory: navigator.deviceMemory,
+                        connection: navigator.connection ? navigator.connection.effectiveType : 'N/A',
+                        // Check for automation detection properties
+                        hasAutomationProperty: typeof navigator.webdriver !== 'undefined',
+                        hasCDC: typeof window.cdc_adoQpoasnfa76pfcZLmcfl_Array !== 'undefined',
+                        hasCallPhantom: typeof window.callPhantom !== 'undefined',
+                        hasPhantom: typeof window._phantom !== 'undefined'
+                    };
+                """)
+                logger.debug(f"JavaScript environment check: {js_checks}")
 
-            if js_checks.get('webdriver'):
-                logger.warning("⚠️ navigator.webdriver is TRUE - bot detected!")
-            else:
-                logger.info("✓ navigator.webdriver is hidden")
+                if js_checks.get('webdriver'):
+                    logger.warning("⚠️ navigator.webdriver is TRUE - bot detected!")
+                else:
+                    logger.debug("✓ navigator.webdriver is hidden")
 
-            if js_checks.get('hasCDC'):
-                logger.warning("⚠️ CDC properties detected!")
-            else:
-                logger.info("✓ No CDC automation markers")
+                if js_checks.get('hasCDC'):
+                    logger.warning("⚠️ CDC properties detected!")
+                else:
+                    logger.debug("✓ No CDC automation markers")
 
-        except Exception as e:
-            logger.error(f"Failed to run JavaScript checks: {e}")
+            except Exception as e:
+                logger.error(f"Failed to run JavaScript checks: {e}")
 
         page_title = driver.title
         current_url = driver.current_url
@@ -528,29 +452,31 @@ def scrape_darkiworld(data: dict = None) -> dict:
             except:
                 pass
 
-        # Save complete HTML to file (both source and rendered)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = os.path.join(os.getcwd(), 'output')
-        os.makedirs(output_dir, exist_ok=True)
+        # Save complete HTML to file (only in DEBUG mode)
+        html_filepath = None
+        rendered_filepath = None
+        if DEBUG:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_dir = os.path.join(os.getcwd(), 'output')
+            os.makedirs(output_dir, exist_ok=True)
 
-        # Save page source (initial HTML)
-        html_filename = f"darkiworld_page_source_{timestamp}.html"
-        html_filepath = os.path.join(output_dir, html_filename)
-        with open(html_filepath, 'w', encoding='utf-8') as f:
-            f.write(page_html)
-        logger.info(f"Saved page source to: {html_filepath}")
+            # Save page source (initial HTML)
+            html_filename = f"darkiworld_page_source_{timestamp}.html"
+            html_filepath = os.path.join(output_dir, html_filename)
+            with open(html_filepath, 'w', encoding='utf-8') as f:
+                f.write(page_html)
+            logger.debug(f"Saved page source to: {html_filepath}")
 
-        # Save rendered HTML (after JavaScript execution)
-        try:
-            rendered_html = driver.execute_script("return document.documentElement.outerHTML")
-            rendered_filename = f"darkiworld_page_rendered_{timestamp}.html"
-            rendered_filepath = os.path.join(output_dir, rendered_filename)
-            with open(rendered_filepath, 'w', encoding='utf-8') as f:
-                f.write(rendered_html)
-            logger.info(f"✓ Saved RENDERED HTML (after JS) to: {rendered_filepath}")
-        except Exception as e:
-            logger.warning(f"Could not save rendered HTML: {e}")
-            rendered_filepath = html_filepath
+            # Save rendered HTML (after JavaScript execution)
+            try:
+                rendered_html = driver.execute_script("return document.documentElement.outerHTML")
+                rendered_filename = f"darkiworld_page_rendered_{timestamp}.html"
+                rendered_filepath = os.path.join(output_dir, rendered_filename)
+                with open(rendered_filepath, 'w', encoding='utf-8') as f:
+                    f.write(rendered_html)
+                logger.debug(f"✓ Saved RENDERED HTML (after JS) to: {rendered_filepath}")
+            except Exception as e:
+                logger.debug(f"Could not save rendered HTML: {e}")
 
         # Get cookies
         cookies = driver.get_cookies()
@@ -604,11 +530,12 @@ def search_darkiworld(data: dict) -> dict:
     try:
         sb = get_driver()
         driver = sb.driver  # Keep reference for compatibility with existing code
+        darkiworld_url = get_darkiworld_url()
         logger.info(f"🔍 Searching for: '{query}' (type: {media_type}, season: {season}, ep: {ep})")
 
         # Ensure authentication (load cookies or login if necessary)
         logger.info("Authenticating...")
-        authenticated = ensure_authenticated(sb, DARKIWORLD_URL, DARKIWORLD_EMAIL, DARKIWORLD_PASSWORD)
+        authenticated = ensure_authenticated(sb, darkiworld_url, DARKIWORLD_EMAIL, DARKIWORLD_PASSWORD)
 
         if not authenticated:
             logger.error("❌ Authentication failed - cannot perform search")
@@ -627,7 +554,7 @@ def search_darkiworld(data: dict) -> dict:
         logger.info(f"Calling search API: {search_api_url}")
 
         # Navigate to base URL first to have cookies context
-        sb.open(DARKIWORLD_URL)
+        sb.open(darkiworld_url)
         sb.wait_for_ready_state_complete()
 
         # Call the search API using JavaScript fetch with cookies
@@ -827,9 +754,7 @@ def search_darkiworld(data: dict) -> dict:
         # Get download links for filtered releases
         release_ids = [r['id'] for r in filtered_releases]
         logger.info(f"Getting download links for {len(release_ids)} releases (buffer for dead links)...")
-        release_ids = [r['id'] for r in filtered_releases]
-        logger.info(f"Getting download links for {len(release_ids)} releases (buffer for dead links)...")
-        
+
         # Add a small delay before starting download loop to avoid rate limits
         time.sleep(2)
         
