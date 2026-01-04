@@ -51,6 +51,7 @@ export type QBTorrentState =
   | 'missingFiles'
   | 'uploading'
   | 'pausedUP'
+  | 'stoppedUP'
   | 'queuedUP'
   | 'stalledUP'
   | 'checkingUP'
