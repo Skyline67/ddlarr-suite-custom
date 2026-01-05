@@ -2,6 +2,31 @@
 
 Indexeur Torznab pour sites DDL (Direct Download Links), compatible avec Prowlarr, Sonarr et Radarr.
 
+## Quick Install (Docker)
+
+```bash
+# 1. Download docker-compose and .env files
+curl -O https://raw.githubusercontent.com/z-m-g/ddlarr-suite/main/docker-compose.prod.yml
+curl -O https://raw.githubusercontent.com/z-m-g/ddlarr-suite/main/.env.example
+mv .env.example .env
+
+# 2. Edit .env with your settings (debrid API key, site URLs, etc.)
+nano .env
+
+# 3. Create download directories
+mkdir -p downloads downloads-temp
+
+# 4. Start services
+docker compose -f docker-compose.prod.yml up -d
+```
+
+**Access:**
+- Torznab Indexer: `http://localhost:9117`
+- qBittorrent UI: `http://localhost:8080` (admin/adminadmin)
+
+**Configure in Radarr/Sonarr:**
+1. Add Indexer: Settings > Indexers > Torznab > URL: `http://<IP>:9117/api/wawacity/`
+2. Add Download Client: Settings > Download Clients > qBittorrent > Host: `<IP>`, Port: `8080`
 
 ## Soutien
 ☕ Après minuit, je code. Je bois du café — pas d’eau (c’est dangereux pour les gremlins).  

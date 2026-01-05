@@ -1,0 +1,87 @@
+# DDL-Torznab Suite - Production Docker Compose
+#
+# Quick Start:
+#   1. Copy this file and .env.example to your server
+#   2. Rename .env.example to .env and configure your settings
+#   3. Run: docker compose -f docker-compose.prod.yml up -d
+#
+# Services:
+#   - ddl-torznab: Torznab indexer for Sonarr/Radarr (port 9117)
+#   - dlprotect-resolver: Link resolver service (internal)
+#   - ddl-qbittorrent: qBittorrent-compatible download client (port 8080)
+
+services:
+  # Torznab Indexer - Add to Sonarr/Radarr as indexer
+  ddl-torznab:
+    image: ghcr.io/z-m-g/ddl-torznab:latest
+    container_name: ddl-torznab
+    ports:
+      - "${INDEXER_PORT:-9117}:${INDEXER_PORT:-9117}"
+    environment:
+      - NODE_ENV=production
+      - PORT=${INDEXER_PORT:-9117}
+      - WAWACITY_URL=${WAWACITY_URL}
+      - ZONETELECHARGER_URL=${ZONETELECHARGER_URL}
+      - DLPROTECT_SERVICE_URL=http://dlprotect-resolver:5000
+      - DLPROTECT_RESOLVE_AT=${DLPROTECT_RESOLVE_AT:-indexer}
+    depends_on:
+      dlprotect-resolver:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Link resolver (internal service)
+  dlprotect-resolver:
+    image: ghcr.io/z-m-g/dlprotect-resolver:latest
+    container_name: dlprotect-resolver
+    environment:
+      - PYTHONUNBUFFERED=1
+      - CACHE_DIR=/app/cache
+      - PORT=5000
+    volumes:
+      - dlprotect-cache:/app/cache
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # qBittorrent-compatible API - Add to Sonarr/Radarr as download client
+  ddl-qbittorrent:
+    image: ghcr.io/z-m-g/ddl-qbittorrent:latest
+    container_name: ddl-qbittorrent
+    ports:
+      - "${QBITTORRENT_PORT:-8080}:8080"
+    depends_on:
+      dlprotect-resolver:
+        condition: service_healthy
+    environment:
+      - PORT=8080
+      - DATA_PATH=/data
+      - DOWNLOAD_PATH=/downloads
+      - TEMP_PATH=/downloads-temp
+      - DLPROTECT_SERVICE_URL=http://dlprotect-resolver:5000
+      # Authentication (change these!)
+      - QB_USERNAME=${QB_USERNAME:-admin}
+      - QB_PASSWORD=${QB_PASSWORD:-adminadmin}
+      # Download settings
+      - MAX_CONCURRENT_DOWNLOADS=${MAX_CONCURRENT_DOWNLOADS:-3}
+      - AUTO_REMOVE_COMPLETED_AFTER=${AUTO_REMOVE_COMPLETED_AFTER:-0}
+      - AUTO_EXTRACT_ARCHIVE=${AUTO_EXTRACT_ARCHIVE:-1}
+      # Debrid Services (at least one required)
+      - ALLDEBRID_ENABLED=${ALLDEBRID_ENABLED:-false}
+      - ALLDEBRID_API_KEY=${ALLDEBRID_API_KEY:-}
+      - REALDEBRID_ENABLED=${REALDEBRID_ENABLED:-false}
+      - REALDEBRID_API_KEY=${REALDEBRID_API_KEY:-}
+      - PREMIUMIZE_ENABLED=${PREMIUMIZE_ENABLED:-false}
+      - PREMIUMIZE_API_KEY=${PREMIUMIZE_API_KEY:-}
+    volumes:
+      - qbittorrent-data:/data
+      - ${DOWNLOADS_PATH:-./downloads}:/downloads
+      - ${DOWNLOADS_TEMP_PATH:-./downloads-temp}:/downloads-temp
+    restart: unless-stopped
+
+volumes:
+  dlprotect-cache:
+  qbittorrent-data:
