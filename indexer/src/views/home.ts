@@ -388,7 +388,7 @@ export function renderHomePage(host: string): string {
         <div class="prereq-title">Pré-requis</div>
         <ul class="prerequisites">
           <li>Compte Premium sur Darkiworld</li>
-          <li>Clef API AllDebrid configurée dans .env</li>
+          <li>Clé API AllDebrid configurée dans .env</li>
         </ul>
       </div>
       

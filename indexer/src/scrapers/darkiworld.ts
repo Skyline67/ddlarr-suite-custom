@@ -1,11 +1,7 @@
-/**
- * DarkiworldPremium Scraper
- * Connects to the Darkiworld Python Flask service for premium content scraping
- */
 import { BaseScraper, parseQuality, parseLanguage } from './base.js';
 import { ScraperResult, SearchParams, ContentType } from '../models/torznab.js';
 import { fetchJson } from '../utils/http.js';
-import { config } from '../config.js';
+import { getSearchQueriesFromImdb } from '../utils/imdb.js';
 
 interface DarkiworldRelease {
   name?: string;
@@ -109,71 +105,80 @@ export class DarkiworldPremiumScraper implements BaseScraper {
   }
 
   async search(params: SearchParams): Promise<ScraperResult[]> {
-    if (!params.q) return [];
+    const results: ScraperResult[] = [];
 
-    const response = await this.searchDarkiworld(params.q, undefined, undefined, undefined, params.hoster);
-    
-    if (!response.success || !response.releases || response.releases.length === 0) {
-      return [];
-    }
+    const [movies, series, anime] = await Promise.allSettled([
+      this.searchMovies(params),
+      this.searchSeries(params),
+      this.searchAnime(params),
+    ]);
 
-    const mediaTitle = response.media_title || params.q;
+    if (movies.status === 'fulfilled') results.push(...movies.value);
+    if (series.status === 'fulfilled') results.push(...series.value);
+    if (anime.status === 'fulfilled') results.push(...anime.value);
 
-    // Map all releases - no filtering by type since this is generic search
-    return response.releases.map((release) =>
-      this.mapToScraperResult(release, mediaTitle, 'movie') // Default to movie for generic search
-    );
+    return results;
   }
 
   async searchMovies(params: SearchParams): Promise<ScraperResult[]> {
-    if (!params.q) return [];
-
-    const response = await this.searchDarkiworld(params.q, 'movie', undefined, undefined, params.hoster);
-    
-    if (!response.success || !response.releases || response.releases.length === 0) {
-      return [];
-    }
-
-    const mediaTitle = response.media_title || params.q;
-
-    // Map all releases as movies
-    return response.releases.map((release) =>
-      this.mapToScraperResult(release, mediaTitle, 'movie')
-    );
+    return this.searchByType(params, 'movie');
   }
 
   async searchSeries(params: SearchParams): Promise<ScraperResult[]> {
-    if (!params.q) return [];
-
-    // Pass season, episode, and hosters to filter results on the Python service
-    const response = await this.searchDarkiworld(params.q, 'series', params.season, params.ep, params.hoster);
-    
-    if (!response.success || !response.releases || response.releases.length === 0) {
-      return [];
-    }
-
-    const mediaTitle = response.media_title || params.q;
-
-    // Map all releases as series (already filtered by season/ep on the service)
-    return response.releases.map((release) =>
-      this.mapToScraperResult(release, mediaTitle, 'series')
-    );
+    return this.searchByType(params, 'series');
   }
 
   async searchAnime(params: SearchParams): Promise<ScraperResult[]> {
-    if (!params.q) return [];
+    return this.searchByType(params, 'anime');
+  }
 
-    const response = await this.searchDarkiworld(params.q, undefined, undefined, undefined, params.hoster);
-    
-    if (!response.success || !response.releases || response.releases.length === 0) {
-      return [];
+  private async searchByType(params: SearchParams, contentType: ContentType): Promise<ScraperResult[]> {
+    if (!params.q && !params.imdbid) return [];
+
+    let searchQueries: string[] = [];
+    if (params.imdbid) {
+      console.log(`[DarkiworldPremium] IMDB ID provided for ${contentType}: ${params.imdbid}`);
+      searchQueries = await getSearchQueriesFromImdb(params.imdbid, params.q);
+    } else if (params.q) {
+      searchQueries = [params.q];
     }
 
-    const mediaTitle = response.media_title || params.q;
+    if (searchQueries.length === 0) return [];
 
-    // Map all releases as anime
-    return response.releases.map((release) =>
-      this.mapToScraperResult(release, mediaTitle, 'anime')
-    );
+    const allResults: ScraperResult[] = [];
+    const seenLinks = new Set<string>();
+
+    for (const query of searchQueries) {
+      // Determine API parameters based on content type
+      let typeParam: 'movie' | 'series' | undefined;
+      let seasonParam: string | undefined;
+      let epParam: string | undefined;
+
+      if (contentType === 'movie') {
+        typeParam = 'movie';
+      } else if (contentType === 'series') {
+        typeParam = 'series';
+        seasonParam = params.season;
+        epParam = params.ep;
+      }
+      // For anime, typeParam stays undefined (generic search)
+
+      const response = await this.searchDarkiworld(query, typeParam, seasonParam, epParam, params.hoster);
+      
+      if (!response.success || !response.releases || response.releases.length === 0) {
+        continue;
+      }
+
+      const mediaTitle = response.media_title || query;
+
+      for (const release of response.releases) {
+        if (!seenLinks.has(release.download_link)) {
+          seenLinks.add(release.download_link);
+          allResults.push(this.mapToScraperResult(release, mediaTitle, contentType));
+        }
+      }
+    }
+
+    return allResults;
   }
 }

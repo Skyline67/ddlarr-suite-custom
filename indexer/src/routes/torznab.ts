@@ -182,22 +182,18 @@ async function executeSearch(ctx: SearchContext): Promise<string> {
       break;
     }
     case 'movie':
-      // Only search if imdbid OR query is provided
-      // Note: Some scrapers (like darkiworld-premium) use text search, not imdbid
-      if (searchParams.imdbid || searchParams.q) {
+      if (searchParams.imdbid) {
         results = await scraper.searchMovies(searchParams);
       } else {
-        console.log(`[Torznab] Skipping movie search without imdbid or query`);
+        console.log(`[Torznab] Skipping movie search without imdbid to avoid duplicates`);
         results = [];
       }
       break;
     case 'tvsearch':
-      // Only search if imdbid OR query is provided
-      // Note: Some scrapers (like darkiworld-premium) use text search, not imdbid
-      if (searchParams.imdbid || searchParams.q) {
+      if (searchParams.imdbid) {
         results = await scraper.searchSeries(searchParams);
       } else {
-        console.log(`[Torznab] Skipping tvsearch without imdbid or query`);
+        console.log(`[Torznab] Skipping tvsearch without imdbid to avoid duplicates`);
         results = [];
       }
       break;
