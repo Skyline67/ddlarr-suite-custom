@@ -8,16 +8,11 @@
   - Nécessite une clé API (`DARKIWORLD_API_KEY`)
   - Décommenter dans `config.ts`, `scrapers/index.ts` et `docker-compose.yml`
 
-### Download Station Client
-- [ ] Remplacer l'implémentation custom par [synology-http-client](https://github.com/dvcol/synology-http-client)
-  - Support complet de l'API Synology
-  - Meilleure gestion des erreurs
-  - Authentification plus robuste
-  - Support de toutes les versions de l'API
-
-### Developper un downloader complet qui impletement les meme protocoles que qBittorent pour améliorer l'integration 
-
-
+  
 ### Indiquer en debut de log si le container démarre bien avec le code à jour
  - commit courant le plus recent.
  - Mettre un gros warning si ce n'est pas le cas.
+
+
+### Utiliser le cache des dl-link pour resoudre les liens en cache au niveau de l'indexeur
+- Permettra de ne pas lister des liens en 404 que l'on peut déjà tester. 

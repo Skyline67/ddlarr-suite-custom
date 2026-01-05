@@ -14,8 +14,11 @@ export interface BaseScraper {
 export function parseQuality(title: string): string | undefined {
   const qualityPatterns = [
     /\b(2160p|4K|UHD)\b/i,
+    /\b(HDLIGHT\s*1080p)\b/i,
+    /\b(HDLIGHT\s*720p)\b/i,
     /\b(1080p|FHD)\b/i,
-    /\b(720p|HD)\b/i,
+    /\b(720p)\b/i,
+    /\b(HDLIGHT)\b/i,
     /\b(480p|SD)\b/i,
     /\b(HDTV)\b/i,
     /\b(WEB-?DL|WEBDL)\b/i,
@@ -28,26 +31,38 @@ export function parseQuality(title: string): string | undefined {
   for (const pattern of qualityPatterns) {
     const match = title.match(pattern);
     if (match) {
-      return match[1].toUpperCase();
+      // Normalise: enlève les espaces et met en majuscules
+      return match[1].replace(/\s+/g, '.').toUpperCase();
     }
   }
   return undefined;
 }
 
 export function parseLanguage(title: string): string | undefined {
-  const langPatterns = [
-    { pattern: /\b(FRENCH|VFF|VFI|VF2|TRUEFRENCH)\b/i, lang: 'French' },
-    { pattern: /\b(MULTI)\b/i, lang: 'Multi' },
-    { pattern: /\b(VOSTFR|SUBFRENCH)\b/i, lang: 'VOSTFR' },
-    { pattern: /\b(ENGLISH|ENG)\b/i, lang: 'English' },
-  ];
+  const languages: string[] = [];
 
-  for (const { pattern, lang } of langPatterns) {
-    if (pattern.test(title)) {
-      return lang;
-    }
+  // Détecte MULTI
+  if (/\b(MULTI)\b/i.test(title)) {
+    languages.push('MULTI');
   }
-  return undefined;
+
+  // Détecte la langue française spécifique
+  const frenchMatch = title.match(/\b(TRUEFRENCH|VFF|VFI|VF2|FRENCH)\b/i);
+  if (frenchMatch) {
+    languages.push(frenchMatch[1].toUpperCase());
+  }
+
+  // Détecte VOSTFR
+  if (/\b(VOSTFR|SUBFRENCH)\b/i.test(title)) {
+    languages.push('VOSTFR');
+  }
+
+  // Détecte English si pas de français
+  if (languages.length === 0 && /\b(ENGLISH|ENG)\b/i.test(title)) {
+    languages.push('English');
+  }
+
+  return languages.length > 0 ? languages.join('.') : undefined;
 }
 
 export function parseSeasonEpisode(title: string): { season?: number; episode?: number } {

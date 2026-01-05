@@ -2,9 +2,52 @@
 
 Indexeur Torznab pour sites DDL (Direct Download Links), compatible avec Prowlarr, Sonarr et Radarr.
 
+## Quick Install (Docker)
+
+```bash
+# 1. Download docker-compose and .env files
+curl -O https://raw.githubusercontent.com/z-m-g/ddlarr-suite/main/docker-compose.prod.yml
+curl -O https://raw.githubusercontent.com/z-m-g/ddlarr-suite/main/.env.example
+mv .env.example .env
+
+# 2. Edit .env with your settings (debrid API key, site URLs, etc.)
+nano .env
+
+# 3. Create download directories
+mkdir -p downloads downloads-temp
+
+# 4. Start services
+docker compose -f docker-compose.prod.yml up -d
+```
+
+**Access:**
+- Torznab Indexer: `http://localhost:9117`
+- qBittorrent UI: `http://localhost:8080` (admin/adminadmin)
+
+**Configure in Radarr/Sonarr:**
+1. Add Indexer: Settings > Indexers > Torznab > URL: `http://<IP>:9117/api/wawacity/`
+2. Add Download Client: Settings > Download Clients > qBittorrent > Host: `<IP>`, Port: `8080`
+
+## Soutien
+☕ Après minuit, je code. Je bois du café — pas d’eau (c’est dangereux pour les gremlins).  
+<a href="https://www.buymeacoffee.com/z.m.g"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" height="40"></a>
+
+
 ## Architecture
 
-Le projet se compose de 3 services Docker :
+Le projet se compose de plusieurs services Docker. Deux approches sont possibles :
+
+### Option A : DDL-qBittorrent (Recommandé)
+
+| Service | Port par défaut | Description |
+|---------|-----------------|-------------|
+| **ddl-torznab** | 9117 | Indexeur Torznab qui scrape les sites DDL |
+| **dlprotect-resolver** | 5000 | Service Botasaurus pour résoudre les liens dl-protect |
+| **ddl-qbittorrent** | 8080 | Simule un client qBittorrent pour Sonarr/Radarr |
+
+Cette approche simule un vrai client qBittorrent. Sonarr/Radarr communiquent directement avec ddl-qbittorrent comme s'il s'agissait d'un vrai client torrent.
+
+### Option B : Blackhole + Client externe
 
 | Service | Port par défaut | Description |
 |---------|-----------------|-------------|
@@ -12,7 +55,9 @@ Le projet se compose de 3 services Docker :
 | **dlprotect-resolver** | 5000 | Service Botasaurus pour résoudre les liens dl-protect |
 | **ddl-downloader** | 9118 | Surveille un dossier blackhole et envoie les liens aux clients de téléchargement |
 
-> Les ports sont configurables via les variables `INDEXER_PORT`, `DOWNLOADER_PORT`, `DLPROTECT_RESOLVER_PORT`
+Cette approche utilise un dossier blackhole et un client de téléchargement externe (JDownloader, aria2, Download Station).
+
+> Les ports sont configurables via les variables d'environnement
 
 ## Sites supportés
 
@@ -57,19 +102,123 @@ ALLDEBRID_API_KEY=votre_cle_api
 
 ### 3. Lancer les services
 
+Choisir une des deux options :
+
+**Option A - DDL-qBittorrent (Recommandé) :**
 ```bash
-docker-compose up -d
+docker compose --profile qbittorrent up -d
 ```
 
-### 4. Configurer le downloader
+**Option B - Blackhole + Client externe :**
+```bash
+docker compose --profile blackhole up -d
+```
 
-Accéder à l'interface web : http://localhost:9118
+> **Note** : `docker compose up -d` (sans profil) ne démarre que les services de base (indexeur + résolveur). Vous devez spécifier un profil pour avoir un système de téléchargement complet.
 
-Configurer votre client de téléchargement (JDownloader, aria2, ou Download Station).
+### 4. Arrêter les services
 
-## Configuration de Radarr
+Pour arrêter tous les services (incluant tous les profils) :
 
-### Étape 1 : Ajouter l'indexeur Torznab
+```bash
+docker compose --profile qbittorrent --profile blackhole down
+```
+
+## Configuration avec DDL-qBittorrent (Option A - Recommandé)
+
+### Lancer les services
+
+```bash
+docker compose --profile qbittorrent up -d
+```
+
+> Cette commande démarre uniquement : `ddl-torznab`, `dlprotect-resolver` et `ddl-qbittorrent`
+
+### Configuration de Radarr/Sonarr
+
+#### Étape 1 : Ajouter l'indexeur Torznab
+
+1. Aller dans **Settings > Indexers > Add**
+2. Choisir **Torznab**
+3. Configurer :
+   - **Name** : DDL Wawacity (ou ZoneTelecharger)
+   - **URL** : `http://<IP>:9117/api/wawacity/` (ou `zonetelecharger`)
+   - **API Key** : `ddl-torznab` (n'importe quelle valeur)
+   - **Categories** : 2000, 2040, 2045 (Radarr) ou 5000, 5040, 5045 (Sonarr)
+4. Cliquer sur **Test** puis **Save**
+
+#### Étape 2 : Configurer DDL-qBittorrent comme Download Client
+
+1. Aller dans **Settings > Download Clients > Add**
+2. Choisir **qBittorrent**
+3. Configurer :
+   - **Name** : DDL-qBittorrent
+   - **Host** : `<IP>` (IP du serveur ddl-qbittorrent)
+   - **Port** : `8080` (ou votre valeur de `QBITTORRENT_PORT`)
+   - **Username** : `admin` (ou votre valeur de `QB_USERNAME`)
+   - **Password** : `adminadmin` (ou votre valeur de `QB_PASSWORD`)
+   - **Category** : `radarr` ou `sonarr` (optionnel)
+4. Cliquer sur **Test** puis **Save**
+
+> **Mappages de chemins distants** : Si Sonarr/Radarr et ddl-qbittorrent ne partagent pas le même système de fichiers, configurez les "Remote Path Mappings" dans Settings > Download Clients. Par exemple, si ddl-qbittorrent télécharge dans `/downloads` mais que Sonarr voit ce dossier comme `/mnt/downloads`, ajoutez un mapping : Host=`<IP ddl-qbittorrent>`, Remote Path=`/downloads`, Local Path=`/mnt/downloads`.
+
+> **Interface Web** : Accessible sur `http://<IP>:<QBITTORRENT_PORT>/` pour voir l'état des téléchargements (port 8080 par défaut)
+
+### Variables d'environnement DDL-qBittorrent
+
+| Variable | Description | Défaut |
+|----------|-------------|--------|
+| `QBITTORRENT_PORT` | Port du service | 8080 |
+| `QB_USERNAME` | Nom d'utilisateur | admin |
+| `QB_PASSWORD` | Mot de passe | adminadmin |
+| `DOWNLOAD_PATH` | Dossier de destination des téléchargements | /downloads |
+| `TEMP_PATH` | Dossier temporaire pour les téléchargements en cours | /downloads-temp |
+| `MAX_CONCURRENT_DOWNLOADS` | Nombre de téléchargements simultanés | 3 |
+| `AUTO_EXTRACT_ARCHIVE` | Extraire automatiquement les archives (zip, rar, 7z) | 1 (activé) |
+| `AUTO_REMOVE_COMPLETED_AFTER` | Supprimer les téléchargements terminés après X minutes (0 = désactivé) | 0 |
+| `ALLDEBRID_ENABLED` | Activer AllDebrid | false |
+| `ALLDEBRID_API_KEY` | Clé API AllDebrid | - |
+| `REALDEBRID_ENABLED` | Activer RealDebrid | false |
+| `REALDEBRID_API_KEY` | Clé API RealDebrid | - |
+
+### Flux de téléchargement (Option A)
+
+```
+┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
+│ Radarr/     │────>│ ddl-torznab  │────>│ Site DDL        │
+│ Sonarr      │     │ (recherche)  │     │ (wawacity, etc) │
+└─────────────┘     └──────────────┘     └─────────────────┘
+       │
+       │ envoie .torrent via API qBittorrent
+       ▼
+┌─────────────────┐     ┌───────────────────┐
+│ ddl-qbittorrent │────>│ dlprotect-resolver│
+│ (télécharge)    │     │ (si lien protégé) │
+└─────────────────┘     └───────────────────┘
+       │
+       │ télécharge via debrid (AllDebrid/RealDebrid)
+       ▼
+┌─────────────────┐
+│ Downloads       │ ← Radarr/Sonarr importe automatiquement
+│ folder          │
+└─────────────────┘
+```
+
+---
+
+## Configuration avec Blackhole (Option B)
+
+### Lancer les services
+
+```bash
+docker compose --profile blackhole up -d
+```
+
+> Cette commande démarre uniquement : `ddl-torznab`, `dlprotect-resolver` et `ddl-downloader`
+
+### Configuration de Radarr
+
+#### Étape 1 : Ajouter l'indexeur Torznab
 
 1. Aller dans **Settings > Indexers > Add**
 2. Choisir **Torznab**
@@ -128,6 +277,32 @@ Configurer votre client de téléchargement (JDownloader, aria2, ou Download Sta
 | ZoneTelecharger | `http://<IP>:9117/api/zonetelecharger/` |
 
 > Remplacer `<IP>` par l'adresse du serveur (ex: `192.168.1.100`, `localhost`, ou votre domaine)
+
+### Filtrage par hébergeur
+
+Vous pouvez filtrer les résultats pour n'afficher que les liens d'un ou plusieurs hébergeurs spécifiques. Cela permet de ne garder que les hébergeurs supportés par votre service debrid.
+
+**Via le chemin URL :**
+```
+http://<IP>:9117/api/wawacity/1fichier/
+http://<IP>:9117/api/wawacity/1fichier,rapidgator/
+http://<IP>:9117/api/zonetelecharger/turbobit/
+```
+
+**Via le paramètre query :**
+```
+http://<IP>:9117/api/wawacity/?hoster=1fichier
+http://<IP>:9117/api/wawacity/?hoster=1fichier,rapidgator
+```
+
+**Hébergeurs courants :**
+- `1fichier`
+- `turbobit`
+- `rapidgator`
+- `uptobox`
+- `nitroflare`
+
+> **Astuce** : Dans Radarr/Sonarr, créez plusieurs indexeurs avec différents hébergeurs pour prioriser certains services. Par exemple, un indexeur `DDL Wawacity - 1fichier` et un autre `DDL Wawacity - turbobit`.
 
 ### Fonctionnement du flux complet
 

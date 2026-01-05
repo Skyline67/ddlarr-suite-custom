@@ -14,8 +14,8 @@ logs/
 
 # Environment variables
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 # Dependencies
 node_modules/
@@ -27,6 +27,9 @@ build/
 *.cache
 cache/
 downloader-config/
+downloads-temp/
+qbittorrent-data/
+downloads/
 
 # Temporary files
 *.tmp
