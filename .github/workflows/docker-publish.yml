@@ -22,15 +22,19 @@ jobs:
           - name: ddl-torznab
             context: ./indexer
             dockerfile: ./indexer/Dockerfile
+            platforms: linux/amd64,linux/arm64
           - name: dlprotect-resolver
             context: ./botasaurus-service
             dockerfile: ./botasaurus-service/Dockerfile
+            platforms: linux/amd64,linux/arm64
           - name: ddl-qbittorrent
             context: ./qbittorrent
             dockerfile: ./qbittorrent/Dockerfile
+            platforms: linux/amd64,linux/arm64
           - name: darkiworld
             context: ./darkiworld
             dockerfile: ./darkiworld/Dockerfile
+            platforms: linux/amd64  # Chrome not available for ARM64
 
     steps:
       - name: Checkout repository
@@ -63,6 +67,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ matrix.platforms }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
