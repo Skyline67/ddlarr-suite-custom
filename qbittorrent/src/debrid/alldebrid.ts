@@ -214,17 +214,22 @@ export class AllDebridClient implements DebridService {
       throw new Error('AllDebrid not configured');
     }
 
-    // Use v4.1 API for status
-    const response = await axios.get<AllDebridResponse<MagnetStatusResponse>>(
+    // Use v4.1 API for status (POST method)
+    const formData = new FormData();
+    formData.append('id', torrentId);
+
+    const response = await axios.post<AllDebridResponse<MagnetStatusResponse>>(
       `${ALLDEBRID_API_V41}/magnet/status`,
+      formData,
       {
-        params: { id: torrentId },
         headers: {
           'Authorization': `Bearer ${config.apiKey}`,
         },
         timeout: 30000,
       }
     );
+
+    console.log(`[AllDebrid] Status response:`, JSON.stringify(response.data, null, 2));
 
     const magnets = response.data.data?.magnets;
     if (response.data.status === 'success' && magnets && magnets.length > 0) {
@@ -298,10 +303,13 @@ export class AllDebridClient implements DebridService {
   private async getMagnetFiles(torrentId: string): Promise<string[]> {
     const config = getConfig().debrid.alldebrid;
 
-    const response = await axios.get<AllDebridResponse<MagnetFilesResponse>>(
+    const formData = new FormData();
+    formData.append('id[]', torrentId);
+
+    const response = await axios.post<AllDebridResponse<MagnetFilesResponse>>(
       `${ALLDEBRID_API_BASE}/magnet/files`,
+      formData,
       {
-        params: { 'id[]': torrentId },
         headers: {
           'Authorization': `Bearer ${config.apiKey}`,
         },
