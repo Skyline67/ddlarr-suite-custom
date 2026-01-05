@@ -9,6 +9,7 @@
 #   - ddl-torznab: Torznab indexer for Sonarr/Radarr (port 9117)
 #   - dlprotect-resolver: Link resolver service (internal)
 #   - ddl-qbittorrent: qBittorrent-compatible download client (port 8080)
+#   - ddl-darkiworld: Darkiworld scraper service (port 5002, optional)
 
 services:
   # Torznab Indexer - Add to Sonarr/Radarr as indexer
@@ -22,6 +23,7 @@ services:
       - PORT=${INDEXER_PORT:-9117}
       - WAWACITY_URL=${WAWACITY_URL}
       - ZONETELECHARGER_URL=${ZONETELECHARGER_URL}
+      - DARKIWORLD_SERVICE_URL=http://ddl-darkiworld:5002
       - DLPROTECT_SERVICE_URL=http://dlprotect-resolver:5000
       - DLPROTECT_RESOLVE_AT=${DLPROTECT_RESOLVE_AT:-indexer}
     depends_on:
@@ -41,6 +43,27 @@ services:
       - dlprotect-cache:/app/cache
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # Darkiworld Premium Scraper Service (optional - for Darkiworld site)
+  ddl-darkiworld:
+    image: ghcr.io/z-m-g/darkiworld:latest
+    container_name: ddl-darkiworld
+    ports:
+      - "${DARKIWORLD_PORT:-5002}:5002"
+    environment:
+      - DARKIWORLD_PORT=5002
+      - DEBUG=${DEBUG:-false}
+      - DARKIWORLD_URL=${DARKIWORLD_URL}
+      - DARKIWORLD_ALLDEBRID_KEY=${ALLDEBRID_API_KEY}
+    volumes:
+      - darkiworld-output:/app/output
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -84,4 +107,5 @@ services:
 
 volumes:
   dlprotect-cache:
+  darkiworld-output:
   qbittorrent-data:
