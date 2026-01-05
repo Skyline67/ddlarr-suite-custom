@@ -309,6 +309,11 @@ docker compose --profile blackhole up -d
 
 > Remplacer `<IP>` par l'adresse du serveur (ex: `192.168.1.100`, `localhost`, ou votre domaine)
 
+### Intégration Prowlarr
+
+Pour une intégration simplifiée avec Prowlarr, une définition Cardigann custom est disponible.
+Voir [prowlarr/README.md](prowlarr/README.md) pour les instructions d'installation.
+
 ### Filtrage par hébergeur
 
 Vous pouvez filtrer les résultats pour n'afficher que les liens d'un ou plusieurs hébergeurs spécifiques. Cela permet de ne garder que les hébergeurs supportés par votre service debrid.
