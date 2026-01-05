@@ -190,41 +190,61 @@ export function startDownload(
     }
 
     if (code === 0) {
-      // Move file from temp to final destination (async to not block)
+      // Check if we need to extract the archive
+      const config = getConfig();
+      if (config.autoExtractArchive && isArchive(filename)) {
+        // Extract directly from temp to final destination (skip copying the archive)
+        // Create a subfolder named after the archive (without extension)
+        const archiveBasename = getArchiveBasename(filename);
+        const extractDir = path.join(downloadPath, archiveBasename);
+
+        console.log(`[Downloader] Archive detected, extracting directly to: ${extractDir}`);
+        download.onExtracting?.(extractDir);
+
+        (async () => {
+          try {
+            // Create extraction directory
+            if (!fs.existsSync(extractDir)) {
+              fs.mkdirSync(extractDir, { recursive: true });
+            }
+
+            await extractArchive(actualTempPath, extractDir);
+            console.log(`[Downloader] Extraction complete: ${extractDir}`);
+
+            // Delete the temp archive (never copy it to final destination)
+            try {
+              fs.unlinkSync(actualTempPath);
+              console.log(`[Downloader] Deleted temp archive: ${actualTempPath}`);
+            } catch (deleteError: any) {
+              console.warn(`[Downloader] Could not delete temp archive: ${deleteError.message}`);
+            }
+
+            console.log(`[Downloader] Download complete: ${extractDir}`);
+            download.progress = 100;
+            download.onComplete?.(extractDir);
+          } catch (extractError: any) {
+            console.error(`[Downloader] Extraction failed: ${extractError.message}`);
+            // Cleanup temp file on extraction error
+            try {
+              if (fs.existsSync(actualTempPath)) {
+                fs.unlinkSync(actualTempPath);
+              }
+            } catch {}
+            download.onError?.(new Error(`Extraction failed: ${extractError.message}`));
+          } finally {
+            activeDownloads.delete(hash);
+          }
+        })();
+        return;  // Don't delete from activeDownloads yet, wait for extraction to complete
+      }
+
+      // Non-archive: move file from temp to final destination
       download.onMoving?.(finalPath);
       console.log(`[Downloader] Moving file to: ${finalPath}`);
 
       moveFileAsync(hash, actualTempPath, finalPath, download.onMoveProgress)
         .then(async () => {
           console.log(`[Downloader] File moved to: ${finalPath}`);
-
-          // Check if we need to extract the archive
-          const config = getConfig();
-          if (config.autoExtractArchive && isArchive(filename)) {
-            console.log(`[Downloader] Archive detected, extracting: ${finalPath}`);
-            download.onExtracting?.(finalPath);
-
-            try {
-              const destDir = path.dirname(finalPath);
-              await extractArchive(finalPath, destDir);
-
-              // Delete the archive after successful extraction
-              try {
-                await deleteFile(finalPath);
-              } catch (deleteError: any) {
-                // Log but don't fail if we can't delete the archive
-                console.warn(`[Downloader] Could not delete archive after extraction: ${deleteError.message}`);
-              }
-
-              console.log(`[Downloader] Extraction complete: ${finalPath}`);
-            } catch (extractError: any) {
-              console.error(`[Downloader] Extraction failed: ${extractError.message}`);
-              download.onError?.(new Error(`Extraction failed: ${extractError.message}`));
-              activeDownloads.delete(hash);
-              return;
-            }
-          }
-
           console.log(`[Downloader] Download complete: ${finalPath}`);
           download.progress = 100;
           download.onComplete?.(finalPath);
@@ -518,6 +538,41 @@ function parseSize(sizeStr: string): number {
     case 'T': return value * 1024 * 1024 * 1024 * 1024;
     default: return value;
   }
+}
+
+/**
+ * Get the base name of an archive file (without archive extensions)
+ * Handles multi-part archives like .part1.rar, .r00, etc.
+ */
+function getArchiveBasename(filename: string): string {
+  let basename = filename;
+
+  // Remove common archive extensions (order matters - check multi-part first)
+  const patterns = [
+    /\.part\d+\.rar$/i,     // .part1.rar, .part01.rar
+    /\.r\d{2,}$/i,          // .r00, .r01, etc.
+    /\.7z\.\d{3}$/i,        // .7z.001, .7z.002
+    /\.zip\.\d{3}$/i,       // .zip.001
+    /\.tar\.gz$/i,          // .tar.gz
+    /\.tar\.bz2$/i,         // .tar.bz2
+    /\.tar\.xz$/i,          // .tar.xz
+    /\.rar$/i,              // .rar
+    /\.zip$/i,              // .zip
+    /\.7z$/i,               // .7z
+    /\.tar$/i,              // .tar
+    /\.gz$/i,               // .gz
+    /\.bz2$/i,              // .bz2
+    /\.xz$/i,               // .xz
+  ];
+
+  for (const pattern of patterns) {
+    if (pattern.test(basename)) {
+      basename = basename.replace(pattern, '');
+      break;
+    }
+  }
+
+  return basename;
 }
 
 /**
