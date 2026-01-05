@@ -120,17 +120,82 @@ def get_darkiworld_url() -> str:
 # Static config from env (no lazy loading for these)
 DARKIWORLD_URL = get_darkiworld_url()
 
-# Authentication credentials
-DARKIWORLD_EMAIL = os.getenv('DARKIWORLD_EMAIL', '')
-DARKIWORLD_PASSWORD = os.getenv('DARKIWORLD_PASSWORD', '')
-
-# Allowed hosters for filtering releases
-ALLOWED_HOSTER = os.getenv('DARKIWORLD_ALLOWED_HOSTER', '').split(',')
-ALLOWED_HOSTER = [h.strip().lower() for h in ALLOWED_HOSTER if h.strip()]
-
 # AllDebrid API configuration
 ALLDEBRID_API_KEY = os.getenv('DARKIWORLD_ALLDEBRID_KEY', '')
 ALLDEBRID_API_URL = 'https://api.alldebrid.com/v4/link/unlock'
 
 # Server configuration
 PORT = int(os.getenv('DARKIWORLD_PORT', 5002))
+
+# Runtime configuration (can be updated via API)
+# This allows dynamic configuration from the indexer UI
+# Darkiworld is disabled by default - must pass login test to enable
+# Credentials are configured via the web UI, not environment variables
+runtime_config = {
+    'enabled': False,
+    'email': '',
+    'password': '',
+    'authenticated': False,
+}
+
+
+def update_runtime_config(new_config: dict) -> dict:
+    """
+    Update runtime configuration with new values.
+    Only updates provided keys, preserves others.
+    
+    Args:
+        new_config: Dict with keys to update (enabled, email, password)
+        
+    Returns:
+        Current config (without password)
+    """
+    global runtime_config
+    
+    if 'enabled' in new_config:
+        runtime_config['enabled'] = bool(new_config['enabled'])
+        logger.info(f"Runtime config: enabled = {runtime_config['enabled']}")
+        
+    if 'email' in new_config:
+        runtime_config['email'] = new_config['email']
+        logger.info(f"Runtime config: email updated")
+        
+    if 'password' in new_config and new_config['password']:
+        runtime_config['password'] = new_config['password']
+        runtime_config['authenticated'] = False  # Need to re-login with new password
+        logger.info("Runtime config: password updated, will re-authenticate")
+    
+    return get_runtime_config()
+
+
+def get_runtime_config(include_sensitive: bool = False) -> dict:
+    """
+    Get current runtime configuration.
+    
+    Args:
+        include_sensitive: If True, includes the password (for internal use).
+                           If False, returns safe version for API (default).
+    
+    Returns:
+        Dict with config values
+    """
+    config = {
+        'enabled': runtime_config['enabled'],
+        'email': runtime_config['email'],
+        'authenticated': runtime_config['authenticated'],
+    }
+    
+    if include_sensitive:
+        config['password'] = runtime_config['password']
+    else:
+        config['has_password'] = bool(runtime_config['password'])
+        
+    return config
+
+
+def set_authenticated(value: bool) -> None:
+    """Set the authenticated status."""
+    global runtime_config
+    runtime_config['authenticated'] = value
+    logger.info(f"Runtime config: authenticated = {value}")
+

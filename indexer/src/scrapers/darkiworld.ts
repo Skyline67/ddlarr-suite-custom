@@ -39,12 +39,19 @@ export class DarkiworldPremiumScraper implements BaseScraper {
   /**
    * Makes an HTTP GET request to the Darkiworld Python service
    */
-  private async searchDarkiworld(query: string, type?: 'movie' | 'series', season?: string, ep?: string): Promise<DarkiworldSearchResponse> {
+  private async searchDarkiworld(
+    query: string,
+    type?: 'movie' | 'series',
+    season?: string,
+    ep?: string,
+    hosters?: string
+  ): Promise<DarkiworldSearchResponse> {
     try {
       const typeParam = type ? `&type=${type}` : '';
       const seasonParam = season ? `&season=${encodeURIComponent(season)}` : '';
       const epParam = ep ? `&ep=${encodeURIComponent(ep)}` : '';
-      const url = `${this.baseUrl}/search?name=${encodeURIComponent(query)}${typeParam}${seasonParam}${epParam}`;
+      const hostersParam = hosters ? `&hosters=${encodeURIComponent(hosters)}` : '';
+      const url = `${this.baseUrl}/search?name=${encodeURIComponent(query)}${typeParam}${seasonParam}${epParam}${hostersParam}`;
       console.log(`[DarkiworldPremium] Calling service: ${url}`);
       
       const response = await fetchJson<DarkiworldSearchResponse>(url, { timeout: 60000 });
@@ -104,7 +111,7 @@ export class DarkiworldPremiumScraper implements BaseScraper {
   async search(params: SearchParams): Promise<ScraperResult[]> {
     if (!params.q) return [];
 
-    const response = await this.searchDarkiworld(params.q);
+    const response = await this.searchDarkiworld(params.q, undefined, undefined, undefined, params.hoster);
     
     if (!response.success || !response.releases || response.releases.length === 0) {
       return [];
@@ -121,7 +128,7 @@ export class DarkiworldPremiumScraper implements BaseScraper {
   async searchMovies(params: SearchParams): Promise<ScraperResult[]> {
     if (!params.q) return [];
 
-    const response = await this.searchDarkiworld(params.q, 'movie');
+    const response = await this.searchDarkiworld(params.q, 'movie', undefined, undefined, params.hoster);
     
     if (!response.success || !response.releases || response.releases.length === 0) {
       return [];
@@ -138,8 +145,8 @@ export class DarkiworldPremiumScraper implements BaseScraper {
   async searchSeries(params: SearchParams): Promise<ScraperResult[]> {
     if (!params.q) return [];
 
-    // Pass season and episode to filter results on the Python service
-    const response = await this.searchDarkiworld(params.q, 'series', params.season, params.ep);
+    // Pass season, episode, and hosters to filter results on the Python service
+    const response = await this.searchDarkiworld(params.q, 'series', params.season, params.ep, params.hoster);
     
     if (!response.success || !response.releases || response.releases.length === 0) {
       return [];
@@ -156,7 +163,7 @@ export class DarkiworldPremiumScraper implements BaseScraper {
   async searchAnime(params: SearchParams): Promise<ScraperResult[]> {
     if (!params.q) return [];
 
-    const response = await this.searchDarkiworld(params.q);
+    const response = await this.searchDarkiworld(params.q, undefined, undefined, undefined, params.hoster);
     
     if (!response.success || !response.releases || response.releases.length === 0) {
       return [];

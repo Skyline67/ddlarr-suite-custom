@@ -16,7 +16,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-from config import get_darkiworld_url, ALLOWED_HOSTER, DARKIWORLD_EMAIL, DARKIWORLD_PASSWORD, DEBUG
+from config import get_darkiworld_url, DEBUG, get_runtime_config
 from driver_sb import get_driver, close_driver
 from auth_sb import ensure_authenticated
 from utils import parse_relative_date, build_release_name
@@ -180,7 +180,8 @@ def scrape_darkiworld(data: dict = None) -> dict:
 
         # Ensure authentication (load cookies or login if necessary)
         logger.info("Authenticating...")
-        authenticated = ensure_authenticated(sb, darkiworld_url, DARKIWORLD_EMAIL, DARKIWORLD_PASSWORD)
+        runtime_cfg = get_runtime_config(include_sensitive=True)
+        authenticated = ensure_authenticated(sb, darkiworld_url, runtime_cfg['email'], runtime_cfg['password'])
 
         if not authenticated:
             logger.error("❌ Authentication failed - cannot proceed")
@@ -540,7 +541,8 @@ def search_darkiworld(data: dict) -> dict:
 
         # Ensure authentication (load cookies or login if necessary)
         logger.info("Authenticating...")
-        authenticated = ensure_authenticated(sb, darkiworld_url, DARKIWORLD_EMAIL, DARKIWORLD_PASSWORD)
+        runtime_cfg = get_runtime_config(include_sensitive=True)
+        authenticated = ensure_authenticated(sb, darkiworld_url, runtime_cfg['email'], runtime_cfg['password'])
 
         if not authenticated:
             logger.error("❌ Authentication failed - cannot perform search")
@@ -749,10 +751,12 @@ def search_darkiworld(data: dict) -> dict:
         target_limit = 25
         buffer_limit = 50
         
-        logger.info(f"Filtering by allowed hosters: {ALLOWED_HOSTER}")
+        # Get allowed_hosters from request data (passed from torznab API via URL)
+        allowed_hosters = data.get('allowed_hosters', [])
+        logger.info(f"Filtering by allowed hosters: {allowed_hosters if allowed_hosters else 'ALL (no filter)'}")
         filtered_releases = filter_and_sort_releases(
             releases,
-            allowed_hosters=ALLOWED_HOSTER,
+            allowed_hosters=allowed_hosters,
             limit=buffer_limit
         )
 
@@ -813,7 +817,7 @@ def search_darkiworld(data: dict) -> dict:
             'total_releases': len(releases),
             'filtered_count': len(filtered_releases),
             'valid_count': len(valid_releases),
-            'allowed_hosters': ALLOWED_HOSTER,
+            'allowed_hosters': allowed_hosters,
             'releases': valid_releases,
             'authenticated': True
         }

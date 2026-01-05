@@ -132,7 +132,8 @@ export function renderHomePage(host: string): string {
     }
     .field-row { display: flex; gap: 0.5rem; }
 
-    input[type="text"] {
+    input[type="text"],
+    input[type="password"] {
       flex: 1;
       padding: 0.5rem 0.75rem;
       background: var(--bg);
@@ -141,8 +142,10 @@ export function renderHomePage(host: string): string {
       color: var(--text);
       font-family: ui-monospace, monospace;
       font-size: 0.8125rem;
+      min-width: 40%;
     }
-    input[type="text"]:focus { outline: none; border-color: var(--accent); }
+    input[type="text"]:focus,
+    input[type="password"]:focus { outline: none; border-color: var(--accent); }
 
     .btn {
       padding: 0.5rem 0.875rem;
@@ -246,6 +249,113 @@ export function renderHomePage(host: string): string {
     }
     footer a { color: var(--text-muted); }
     footer a:hover { color: var(--text); }
+
+    /* Darkiworld config styles */
+    .toggle-label {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      cursor: pointer;
+    }
+    .toggle-label input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      margin: 0;
+      accent-color: var(--accent);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .toggle-text { 
+      font-size: 0.875rem; 
+      flex: 1;
+      text-transform: none; /* Ensure no uppercase */
+    }
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      white-space: nowrap;
+      margin-left: 0.75rem;
+      text-transform: none; /* Ensure no uppercase */
+    }
+    .status-badge.authenticated {
+      background: rgba(16, 185, 129, 0.2);
+      color: var(--success);
+    }
+    .status-badge.not-authenticated {
+      background: rgba(239, 68, 68, 0.2);
+      color: #ef4444;
+    }
+    .status-badge.disabled {
+      background: rgba(156, 163, 175, 0.2);
+      color: var(--text-muted);
+    }
+    .status-badge.loading {
+      background: rgba(59, 130, 246, 0.2);
+      color: var(--accent);
+    }
+    .save-status {
+      margin-left: 0.75rem;
+      font-size: 0.8125rem;
+    }
+    .save-status.success { color: var(--success); }
+    .save-status.error { color: #ef4444; }
+    #darkiworld-fields {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+    .btn-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .btn-secondary {
+      background: var(--border);
+    }
+    .btn-secondary:hover {
+      background: var(--text-muted);
+    }
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .prerequisites {
+      padding-left: 0;
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      list-style: none;
+      margin: 0.5rem 0;
+    }
+    .prerequisites li {
+      margin-bottom: 0.35rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .prerequisites li::before {
+      content: '•';
+      color: var(--accent);
+      font-weight: bold;
+    }
+    .prereq-box {
+      background: rgba(99, 102, 241, 0.1);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      border-radius: 6px;
+      padding: 0.75rem 1rem;
+      margin: 0.75rem 0;
+    }
+    .prereq-box .prereq-title {
+      font-size: 0.6875rem;
+      text-transform: uppercase;
+      color: var(--accent);
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
   </style>
 </head>
 <body>
@@ -260,6 +370,46 @@ export function renderHomePage(host: string): string {
     </header>
 
     ${appSections}
+
+    <div class="card" id="darkiworld-config-card">
+      <h2 style="display: flex; align-items: center;">
+        DarkiWorld Premium
+        <span class="status-badge" id="darkiworld-status">--</span>
+      </h2>
+
+      <div class="field">
+        <label class="toggle-label">
+          <input type="checkbox" id="darkiworld-enabled" onchange="updateDarkiworldStatus()">
+          <span class="toggle-text">Activer l'indexeur</span>
+        </label>
+      </div>
+
+      <div class="prereq-box">
+        <div class="prereq-title">Pré-requis</div>
+        <ul class="prerequisites">
+          <li>Compte Premium sur Darkiworld</li>
+          <li>Clef API AllDebrid configurée dans .env</li>
+        </ul>
+      </div>
+      
+      <div id="darkiworld-fields">
+        <div class="field">
+          <label>Email</label>
+          <input type="text" id="darkiworld-email" placeholder="email@example.com">
+        </div>
+        
+        <div class="field">
+          <label>Mot de passe</label>
+          <input type="password" id="darkiworld-password" placeholder="Laisser vide pour ne pas modifier">
+        </div>
+        
+        <div class="field btn-row">
+          <button class="btn" id="darkiworld-save-btn" onclick="saveDarkiworldConfig()">Enregistrer</button>
+          <button class="btn btn-secondary" id="darkiworld-test-btn" onclick="testDarkiworldLogin()">Tester la connexion</button>
+          <span class="save-status" id="darkiworld-save-status"></span>
+        </div>
+      </div>
+    </div>
 
     <div class="card help">
       <h2>Configuration</h2>
@@ -281,6 +431,7 @@ export function renderHomePage(host: string): string {
         <li><code>/api/wawacity/1fichier</code> - uniquement 1fichier</li>
         <li><code>/api/zonetelecharger/turbobit</code> - uniquement Turbobit</li>
         <li><code>/api/wawacity/1fichier,rapidgator</code> - 1fichier ou Rapidgator</li>
+        <li><code>/api/darkiworld-premium/1fichier</code> - uniquement 1fichier sur DarkiWorld</li>
       </ul>
       <p style="margin-top: 0.75rem;">Hébergeurs courants : <code>1fichier</code>, <code>turbobit</code>, <code>rapidgator</code>, <code>uptobox</code>, <code>nitroflare</code></p>
     </div>
@@ -319,6 +470,174 @@ export function renderHomePage(host: string): string {
         btn.textContent = 'Erreur';
       }
     }
+
+    // Darkiworld config functions
+    let darkiworldConfig = null;
+
+    async function loadDarkiworldConfig() {
+      const statusBadge = document.getElementById('darkiworld-status');
+      statusBadge.textContent = 'Chargement...';
+      statusBadge.className = 'status-badge loading';
+
+      try {
+        const response = await fetch('/darkiworld/config');
+        darkiworldConfig = await response.json();
+
+        document.getElementById('darkiworld-enabled').checked = darkiworldConfig.enabled;
+        document.getElementById('darkiworld-email').value = darkiworldConfig.email || '';
+        updateDarkiworldStatus();
+      } catch (error) {
+        console.error('Error loading Darkiworld config:', error);
+        statusBadge.textContent = 'Erreur';
+        statusBadge.className = 'status-badge error';
+      }
+    }
+
+    // Track if login test has passed in this session
+    let loginTestPassed = false;
+
+    function updateDarkiworldStatus() {
+      const enabled = document.getElementById('darkiworld-enabled').checked;
+      const statusBadge = document.getElementById('darkiworld-status');
+      const fields = document.getElementById('darkiworld-fields');
+      const saveBtn = document.getElementById('darkiworld-save-btn');
+
+      if (!enabled) {
+        statusBadge.textContent = 'Désactivé';
+        statusBadge.className = 'status-badge disabled';
+        fields.style.opacity = '0.5';
+        fields.style.pointerEvents = 'none';
+        saveBtn.disabled = false;
+      } else if (darkiworldConfig && darkiworldConfig.authenticated) {
+        statusBadge.textContent = 'Connecté';
+        statusBadge.className = 'status-badge authenticated';
+        fields.style.opacity = '1';
+        fields.style.pointerEvents = 'auto';
+        saveBtn.disabled = false;
+        loginTestPassed = true;
+      } else {
+        statusBadge.textContent = 'Non connecté';
+        statusBadge.className = 'status-badge not-authenticated';
+        fields.style.opacity = '1';
+        fields.style.pointerEvents = 'auto';
+        // Disable save if trying to enable without successful login
+        saveBtn.disabled = !loginTestPassed;
+      }
+    }
+
+    async function saveDarkiworldConfig() {
+      const btn = document.getElementById('darkiworld-save-btn');
+      const status = document.getElementById('darkiworld-save-status');
+      const enabled = document.getElementById('darkiworld-enabled').checked;
+
+      // If trying to enable but login test hasn't passed, show error
+      if (enabled && !loginTestPassed && !(darkiworldConfig && darkiworldConfig.authenticated)) {
+        status.textContent = '✗ Veuillez tester la connexion';
+        status.className = 'save-status error';
+        setTimeout(() => { status.textContent = ''; }, 3000);
+        return;
+      }
+      
+      btn.disabled = true;
+      btn.textContent = 'Enregistrement...';
+      status.textContent = '';
+      status.className = 'save-status';
+
+      const email = document.getElementById('darkiworld-email').value;
+      const password = document.getElementById('darkiworld-password').value;
+
+      const payload = { enabled, email };
+      if (password) payload.password = password;
+
+      try {
+        const response = await fetch('/darkiworld/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          darkiworldConfig = result;
+          document.getElementById('darkiworld-password').value = '';
+          status.textContent = '✓ Enregistré';
+          status.className = 'save-status success';
+          updateDarkiworldStatus();
+        } else {
+          status.textContent = '✗ ' + (result.error || 'Erreur');
+          status.className = 'save-status error';
+        }
+      } catch (error) {
+        status.textContent = '✗ Erreur de connexion';
+        status.className = 'save-status error';
+      }
+
+      btn.disabled = false;
+      btn.textContent = 'Enregistrer';
+
+      setTimeout(() => {
+        status.textContent = '';
+      }, 3000);
+    }
+
+    async function testDarkiworldLogin() {
+      const testBtn = document.getElementById('darkiworld-test-btn');
+      const saveBtn = document.getElementById('darkiworld-save-btn');
+      const status = document.getElementById('darkiworld-save-status');
+      
+      testBtn.disabled = true;
+      saveBtn.disabled = true;
+      testBtn.textContent = 'Test en cours...';
+      status.textContent = '⏳ Connexion à DarkiWorld (Timeout de 60s)...';
+      status.className = 'save-status';
+
+      const email = document.getElementById('darkiworld-email').value;
+      const password = document.getElementById('darkiworld-password').value;
+
+      const payload = {};
+      if (email) payload.email = email;
+      if (password) payload.password = password;
+
+      try {
+        const response = await fetch('/darkiworld/test-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (result.success && result.authenticated) {
+          loginTestPassed = true;
+          darkiworldConfig = { ...darkiworldConfig, authenticated: true };
+          document.getElementById('darkiworld-password').value = '';
+          status.textContent = '✓ ' + result.message;
+          status.className = 'save-status success';
+          updateDarkiworldStatus();
+        } else {
+          loginTestPassed = false;
+          status.textContent = '✗ ' + (result.message || 'Échec du test');
+          status.className = 'save-status error';
+        }
+      } catch (error) {
+        loginTestPassed = false;
+        status.textContent = '✗ Erreur de connexion au service';
+        status.className = 'save-status error';
+      }
+
+      testBtn.disabled = false;
+      testBtn.textContent = 'Tester la connexion';
+      // Re-enable save button based on login status
+      updateDarkiworldStatus();
+
+      setTimeout(() => {
+        status.textContent = '';
+      }, 5000);
+    }
+
+    // Load config on page load
+    document.addEventListener('DOMContentLoaded', loadDarkiworldConfig);
   </script>
 </body>
 </html>`;

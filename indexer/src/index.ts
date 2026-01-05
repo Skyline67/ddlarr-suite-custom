@@ -1,6 +1,7 @@
 import Fastify, { FastifyRequest, FastifyReply } from 'fastify';
 import { config, initializeSiteUrls } from './config.js';
 import { torznabRoutes } from './routes/torznab.js';
+import darkiworldConfigRoutes from './routes/darkiworld-config.js';
 import { getAvailableSites } from './scrapers/index.js';
 import { renderHomePage } from './views/home.js';
 import { closeBrowser, getServiceCacheStats } from './utils/dlprotect.js';
@@ -29,6 +30,7 @@ async function start(): Promise<void> {
 
     // Register routes
     await app.register(torznabRoutes);
+    await app.register(darkiworldConfigRoutes);
 
     // Homepage - HTML interface
     app.get('/', async (request: FastifyRequest, reply: FastifyReply) => {
