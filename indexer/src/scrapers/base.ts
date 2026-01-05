@@ -47,7 +47,7 @@ export function parseLanguage(title: string): string | undefined {
   }
 
   // Détecte la langue française spécifique
-  const frenchMatch = title.match(/\b(TRUEFRENCH|VFF|VFI|VF2|FRENCH)\b/i);
+  const frenchMatch = title.match(/\b(TRUEFRENCH|VFQ|VFF|VFI|VF2|FRENCH)\b/i);
   if (frenchMatch) {
     languages.push(frenchMatch[1].toUpperCase());
   }
