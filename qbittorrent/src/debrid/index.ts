@@ -95,6 +95,7 @@ export interface DebridTorrentResult {
   service: string;
   torrentId: string;
   downloadLinks: string[];
+  totalSize?: number;  // Total size in bytes from debrid status
 }
 
 /**
@@ -135,11 +136,12 @@ export async function debridTorrent(
         }
 
         if (status.status === 'ready' && status.downloadLinks && status.downloadLinks.length > 0) {
-          console.log(`[Debrid] ${service.name}: Torrent ready with ${status.downloadLinks.length} links`);
+          console.log(`[Debrid] ${service.name}: Torrent ready with ${status.downloadLinks.length} links, size: ${status.totalSize}`);
           return {
             service: service.name,
             torrentId,
             downloadLinks: status.downloadLinks,
+            totalSize: status.totalSize,
           };
         }
 

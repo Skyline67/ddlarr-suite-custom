@@ -615,7 +615,7 @@ class DownloadManager {
           onPaused: () => {
             console.log(`[DownloadManager] Download paused: ${name}`);
           },
-        }, undefined, savePath);
+        }, result.totalSize, savePath);
       } else {
         // Multiple files - download them sequentially
         // For now, download the first one (TODO: handle multi-file torrents properly)
@@ -649,7 +649,7 @@ class DownloadManager {
             this.processQueue();
           },
           onPaused: () => {},
-        }, undefined, savePath);
+        }, result.totalSize, savePath);
       }
     } catch (error: any) {
       repository.updateDownloadState(hash, 'error', error.message);

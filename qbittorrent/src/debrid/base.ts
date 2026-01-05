@@ -5,6 +5,7 @@ export interface DebridTorrentStatus {
   id: string;
   status: 'queued' | 'downloading' | 'ready' | 'error';
   progress: number;  // 0-100
+  totalSize?: number;        // Total size in bytes
   downloadLinks?: string[];  // Available when status is 'ready'
   errorMessage?: string;     // Available when status is 'error'
 }

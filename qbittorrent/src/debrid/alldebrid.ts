@@ -265,6 +265,7 @@ export class AllDebridClient implements DebridService {
         id: torrentId,
         status,
         progress,
+        totalSize: magnet.size,
       };
 
       // Files are included in the status response when ready
