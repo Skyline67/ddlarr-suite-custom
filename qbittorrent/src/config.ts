@@ -7,6 +7,7 @@ export interface Config {
   maxConcurrentDownloads: number;
   autoExtractArchive: boolean;
   autoRemoveCompletedAfter: number;  // Minutes, 0 = disabled
+  debridTorrentTimeoutHours: number; // Timeout for real torrent debrid (hours)
   auth: {
     username: string;
     password: string;
@@ -40,6 +41,7 @@ export function getConfig(): Config {
       maxConcurrentDownloads: parseInt(process.env.MAX_CONCURRENT_DOWNLOADS || '3', 10),
       autoExtractArchive: process.env.AUTO_EXTRACT_ARCHIVE !== '0',  // Enabled by default
       autoRemoveCompletedAfter: parseInt(process.env.AUTO_REMOVE_COMPLETED_AFTER || '0', 10),  // Minutes, 0 = disabled
+      debridTorrentTimeoutHours: parseInt(process.env.DEBRID_TORRENT_TIMEOUT || '24', 10),  // Hours, default 24h
       auth: {
         username: process.env.QB_USERNAME || 'admin',
         password: process.env.QB_PASSWORD || 'adminadmin',

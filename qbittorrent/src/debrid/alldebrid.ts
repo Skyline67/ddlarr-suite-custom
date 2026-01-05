@@ -1,8 +1,9 @@
 import axios from 'axios';
 import { getConfig } from '../config.js';
-import { DebridService } from './base.js';
+import { DebridService, DebridTorrentStatus } from './base.js';
 
 const ALLDEBRID_API_BASE = 'https://api.alldebrid.com/v4';
+const ALLDEBRID_API_V41 = 'https://api.alldebrid.com/v4.1';
 
 interface AllDebridResponse<T> {
   status: 'success' | 'error';
@@ -18,6 +19,56 @@ interface DebridLink {
   filename?: string;
   host?: string;
   filesize?: number;
+}
+
+interface MagnetUploadResponse {
+  magnets: Array<{
+    id: number;
+    name: string;
+    hash: string;
+    ready: boolean;
+  }>;
+}
+
+interface MagnetUploadFileResponse {
+  files: Array<{
+    file: string;
+    name: string;
+    hash: string;
+    id: number;
+    size: number;
+    ready: boolean;
+  }>;
+}
+
+// v4.1 magnet status response
+// When querying by id: magnets is a single object
+// When querying all: magnets is an array
+interface MagnetStatusResponse {
+  magnets: MagnetStatusItem | MagnetStatusItem[];
+}
+
+interface MagnetStatusItem {
+  id: number;
+  filename: string;
+  size: number;
+  status: string;
+  statusCode: number;
+  downloaded?: number;
+  uploaded?: number;
+  seeders?: number;
+  downloadSpeed?: number;
+  uploadSpeed?: number;
+  uploadDate: number;
+  completionDate: number;
+  files?: MagnetFile[];  // Files are included when ready
+}
+
+interface MagnetFile {
+  n: string;  // filename
+  s: number;  // size
+  l?: string; // download link (only for files, not folders)
+  e?: MagnetFile[]; // nested files/folders
 }
 
 /**
@@ -108,5 +159,172 @@ export class AllDebridClient implements DebridService {
     }
 
     throw new Error('Unknown error');
+  }
+
+  supportsTorrents(): boolean {
+    return true;
+  }
+
+  async uploadTorrent(torrentBuffer: Buffer, filename: string = 'file.torrent'): Promise<string> {
+    const config = getConfig().debrid.alldebrid;
+
+    if (!config.apiKey) {
+      throw new Error('AllDebrid not configured');
+    }
+
+    console.log(`[AllDebrid] Uploading torrent file: ${filename}`);
+
+    const formData = new FormData();
+    // Convert Buffer to Uint8Array for Blob compatibility
+    const blob = new Blob([new Uint8Array(torrentBuffer)], { type: 'application/x-bittorrent' });
+    formData.append('files[]', blob, filename);
+
+    // Use /magnet/upload/file for torrent files (not /magnet/upload which is for magnet URIs)
+    const response = await axios.post<AllDebridResponse<MagnetUploadFileResponse>>(
+      `${ALLDEBRID_API_BASE}/magnet/upload/file`,
+      formData,
+      {
+        headers: {
+          'Authorization': `Bearer ${config.apiKey}`,
+        },
+        timeout: 60000,
+      }
+    );
+
+    if (response.data.status === 'success' && response.data.data?.files?.[0]) {
+      const file = response.data.data.files[0];
+      console.log(`[AllDebrid] Torrent uploaded, id: ${file.id}, name: ${file.name}, ready: ${file.ready}`);
+      return String(file.id);
+    }
+
+    if (response.data.error) {
+      throw new Error(`${response.data.error.message} (${response.data.error.code})`);
+    }
+
+    throw new Error('Failed to upload torrent');
+  }
+
+  async getTorrentStatus(torrentId: string): Promise<DebridTorrentStatus> {
+    const config = getConfig().debrid.alldebrid;
+
+    if (!config.apiKey) {
+      throw new Error('AllDebrid not configured');
+    }
+
+    // Use v4.1 API for status (POST method)
+    const formData = new FormData();
+    formData.append('id', torrentId);
+
+    const response = await axios.post<AllDebridResponse<MagnetStatusResponse>>(
+      `${ALLDEBRID_API_V41}/magnet/status`,
+      formData,
+      {
+        headers: {
+          'Authorization': `Bearer ${config.apiKey}`,
+        },
+        timeout: 30000,
+      }
+    );
+
+    console.log(`[AllDebrid] Status response:`, JSON.stringify(response.data, null, 2));
+
+    const magnetsData = response.data.data?.magnets;
+    if (response.data.status === 'success' && magnetsData) {
+      // Handle both single object (query by id) and array (query all)
+      const magnet = Array.isArray(magnetsData) ? magnetsData[0] : magnetsData;
+      if (!magnet) {
+        throw new Error('No magnet found in response');
+      }
+
+      // AllDebrid v4.1 statusCode:
+      // 0: In Queue
+      // 1: Downloading
+      // 2: Compressing/Moving
+      // 3: Uploading
+      // 4: Ready
+      // 5-15: Error states
+
+      let status: DebridTorrentStatus['status'];
+      let progress = 0;
+
+      if (magnet.statusCode === 0) {
+        status = 'queued';
+      } else if (magnet.statusCode >= 1 && magnet.statusCode <= 3) {
+        status = 'downloading';
+        if (magnet.size > 0 && magnet.downloaded) {
+          progress = Math.round((magnet.downloaded / magnet.size) * 100);
+        }
+      } else if (magnet.statusCode === 4) {
+        status = 'ready';
+        progress = 100;
+      } else {
+        status = 'error';
+      }
+
+      const result: DebridTorrentStatus = {
+        id: torrentId,
+        status,
+        progress,
+        totalSize: magnet.size,
+      };
+
+      // Files are included in the status response when ready
+      // Links need to be unlocked via /link/unlock to get actual download URLs
+      if (status === 'ready' && magnet.files && magnet.files.length > 0) {
+        const rawLinks = this.extractLinksFromFiles(magnet.files);
+        const unlockedLinks: string[] = [];
+
+        for (const link of rawLinks) {
+          try {
+            const unlocked = await this.debridLink(link);
+            unlockedLinks.push(unlocked);
+          } catch (error: any) {
+            console.error(`[AllDebrid] Failed to unlock link ${link}: ${error.message}`);
+          }
+        }
+
+        if (unlockedLinks.length > 0) {
+          result.downloadLinks = unlockedLinks;
+        }
+      }
+
+      if (status === 'error') {
+        result.errorMessage = magnet.status || 'Unknown error';
+      }
+
+      return result;
+    }
+
+    if (response.data.error) {
+      return {
+        id: torrentId,
+        status: 'error',
+        progress: 0,
+        errorMessage: response.data.error.message,
+      };
+    }
+
+    throw new Error('Failed to get torrent status');
+  }
+
+  /**
+   * Extract download links from files array (recursive for nested folders)
+   */
+  private extractLinksFromFiles(files: MagnetFile[]): string[] {
+    const links: string[] = [];
+
+    const extractLinks = (fileList: MagnetFile[]) => {
+      for (const file of fileList) {
+        if (file.l) {
+          links.push(file.l);
+        }
+        if (file.e) {
+          extractLinks(file.e);
+        }
+      }
+    };
+
+    extractLinks(files);
+    return links;
   }
 }

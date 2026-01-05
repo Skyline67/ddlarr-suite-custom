@@ -1,201 +1,184 @@
-/**
- * DarkiWorld Scraper - DISABLED
- * This scraper is not fully implemented and is disabled.
- * To re-enable, uncomment darkiworld in config.ts and scrapers/index.ts
- */
-import { BaseScraper, parseQuality, parseLanguage, parseSeasonEpisode } from './base.js';
+import { BaseScraper, parseQuality, parseLanguage } from './base.js';
 import { ScraperResult, SearchParams, ContentType } from '../models/torznab.js';
 import { fetchJson } from '../utils/http.js';
-// import { config } from '../config.js';
+import { getSearchQueriesFromImdb } from '../utils/imdb.js';
 
-interface DarkiSearchResult {
-  id: string;
-  title: string;
-  type: string;
-  year?: number;
-  quality?: string;
+interface DarkiworldRelease {
+  name?: string;
+  added?: string;
+  download_link: string;
+  languages?: string[];
   size?: number;
-  language?: string;
-  imdb_id?: string;
-  tmdb_id?: string;
-  links?: DarkiLink[];
+  subtitles?: string[];
 }
 
-interface DarkiLink {
-  host: string;
-  url: string;
-  quality?: string;
-  size?: number;
-}
-
-interface DarkiApiResponse {
+interface DarkiworldSearchResponse {
   success: boolean;
-  results?: DarkiSearchResult[];
+  query?: string;
+  media_id?: string;
+  media_title?: string;
+  search_url?: string;
+  total_releases?: number;
+  filtered_count?: number;
+  valid_count?: number;
+  allowed_hosters?: string[];
+  releases?: DarkiworldRelease[];
+  authenticated?: boolean;
   error?: string;
 }
 
-export class DarkiworldScraper implements BaseScraper {
-  readonly name = 'DarkiWorld';
+export class DarkiworldPremiumScraper implements BaseScraper {
+  readonly name = 'DarkiWorld Premium';
 
   constructor(public readonly baseUrl: string) {}
 
-  private get apiKey(): string {
-    // return config.darkiworldApiKey; // Disabled
-    return '';
-  }
-
-  private async apiRequest<T>(endpoint: string, params: Record<string, string> = {}): Promise<T> {
-    const searchParams = new URLSearchParams(params);
-    if (this.apiKey) {
-      searchParams.set('apikey', this.apiKey);
-    }
-
-    const url = `${this.baseUrl}${endpoint}?${searchParams.toString()}`;
-    return fetchJson<T>(url);
-  }
-
-  async search(params: SearchParams): Promise<ScraperResult[]> {
-    if (!params.q) return [];
-
+  /**
+   * Makes an HTTP GET request to the Darkiworld Python service
+   */
+  private async searchDarkiworld(
+    query: string,
+    type?: 'movie' | 'series',
+    season?: string,
+    ep?: string,
+    hosters?: string
+  ): Promise<DarkiworldSearchResponse> {
     try {
-      const response = await this.apiRequest<DarkiApiResponse>('/search', {
-        q: params.q,
-        type: 'all',
-      });
-
-      if (!response.success || !response.results) {
-        return [];
+      const typeParam = type ? `&type=${type}` : '';
+      const seasonParam = season ? `&season=${encodeURIComponent(season)}` : '';
+      const epParam = ep ? `&ep=${encodeURIComponent(ep)}` : '';
+      const hostersParam = hosters ? `&hosters=${encodeURIComponent(hosters)}` : '';
+      const url = `${this.baseUrl}/search?name=${encodeURIComponent(query)}${typeParam}${seasonParam}${epParam}${hostersParam}`;
+      console.log(`[DarkiworldPremium] Calling service: ${url}`);
+      
+      const response = await fetchJson<DarkiworldSearchResponse>(url, { timeout: 60000 });
+      
+      if (!response.success) {
+        console.error(`[DarkiworldPremium] Service returned error: ${response.error || 'Unknown error'}`);
+        return response;
       }
 
-      return response.results.map((item) => this.mapToScraperResult(item));
+      console.log(`[DarkiworldPremium] Found ${response.valid_count || 0} valid releases`);
+      return response;
     } catch (error) {
-      console.error('DarkiWorld search error:', error);
-      return [];
-    }
-  }
-
-  async searchMovies(params: SearchParams): Promise<ScraperResult[]> {
-    if (!params.q) return [];
-
-    try {
-      const searchParams: Record<string, string> = {
-        q: params.q,
-        type: 'movie',
+      console.error(`[DarkiworldPremium] HTTP request failed:`, error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
-
-      if (params.imdbid) {
-        searchParams.imdb = params.imdbid;
-      }
-      if (params.tmdbid) {
-        searchParams.tmdb = params.tmdbid;
-      }
-
-      const response = await this.apiRequest<DarkiApiResponse>('/search', searchParams);
-
-      if (!response.success || !response.results) {
-        return [];
-      }
-
-      return response.results
-        .filter((item) => item.type === 'movie')
-        .map((item) => this.mapToScraperResult(item, 'movie'));
-    } catch (error) {
-      console.error('DarkiWorld movie search error:', error);
-      return [];
     }
   }
 
-  async searchSeries(params: SearchParams): Promise<ScraperResult[]> {
-    if (!params.q) return [];
+  /**
+   * Maps a Darkiworld release to a ScraperResult
+   */
+  private mapToScraperResult(
+    release: DarkiworldRelease,
+    mediaTitle: string,
+    contentType: ContentType
+  ): ScraperResult {
+    // Extract quality from filename if not provided
+    const quality = release.name ? parseQuality(release.name) : undefined;
 
-    try {
-      const searchParams: Record<string, string> = {
-        q: params.q,
-        type: 'series',
-      };
-
-      if (params.tvdbid) {
-        searchParams.tvdb = params.tvdbid;
-      }
-      if (params.season) {
-        searchParams.season = params.season;
-      }
-      if (params.ep) {
-        searchParams.episode = params.ep;
-      }
-
-      const response = await this.apiRequest<DarkiApiResponse>('/search', searchParams);
-
-      if (!response.success || !response.results) {
-        return [];
-      }
-
-      return response.results
-        .filter((item) => item.type === 'series')
-        .map((item) => this.mapToScraperResult(item, 'series'));
-    } catch (error) {
-      console.error('DarkiWorld series search error:', error);
-      return [];
+    // Extract language from filename or languages array
+    let language: string | undefined;
+    if (release.languages && release.languages.length > 0) {
+      language = release.languages.join(', ');
+    } else if (release.name) {
+      language = parseLanguage(release.name);
     }
-  }
 
-  async searchAnime(params: SearchParams): Promise<ScraperResult[]> {
-    if (!params.q) return [];
+    // Title: use filename or media title
+    const title = release.name || mediaTitle;
 
-    try {
-      const response = await this.apiRequest<DarkiApiResponse>('/search', {
-        q: params.q,
-        type: 'anime',
-      });
-
-      if (!response.success || !response.results) {
-        return [];
-      }
-
-      return response.results
-        .filter((item) => item.type === 'anime')
-        .map((item) => this.mapToScraperResult(item, 'anime'));
-    } catch (error) {
-      console.error('DarkiWorld anime search error:', error);
-      return [];
-    }
-  }
-
-  private mapToScraperResult(item: DarkiSearchResult, forcedType?: ContentType): ScraperResult {
-    const contentType: ContentType = forcedType || this.mapContentType(item.type);
-    const { season, episode } = parseSeasonEpisode(item.title);
-
-    // Get the best link (prefer highest quality)
-    const bestLink = item.links?.[0]?.url || '';
+    // Parse date
+    const pubDate = release.added ? new Date(release.added) : new Date();
 
     return {
-      title: item.title,
-      link: bestLink,
-      size: item.size || item.links?.[0]?.size,
-      quality: item.quality || parseQuality(item.title),
-      language: item.language || parseLanguage(item.title),
-      imdbId: item.imdb_id,
-      tmdbId: item.tmdb_id ? String(item.tmdb_id) : undefined,
-      season,
-      episode,
+      title,
+      link: release.download_link, // Direct download link
+      size: release.size,
+      quality,
+      language,
       contentType,
-      pubDate: new Date(),
+      pubDate,
     };
   }
 
-  private mapContentType(type: string): ContentType {
-    switch (type.toLowerCase()) {
-      case 'movie':
-      case 'film':
-        return 'movie';
-      case 'series':
-      case 'tv':
-      case 'show':
-        return 'series';
-      case 'anime':
-        return 'anime';
-      default:
-        return 'movie';
+  async search(params: SearchParams): Promise<ScraperResult[]> {
+    const results: ScraperResult[] = [];
+
+    const [movies, series, anime] = await Promise.allSettled([
+      this.searchMovies(params),
+      this.searchSeries(params),
+      this.searchAnime(params),
+    ]);
+
+    if (movies.status === 'fulfilled') results.push(...movies.value);
+    if (series.status === 'fulfilled') results.push(...series.value);
+    if (anime.status === 'fulfilled') results.push(...anime.value);
+
+    return results;
+  }
+
+  async searchMovies(params: SearchParams): Promise<ScraperResult[]> {
+    return this.searchByType(params, 'movie');
+  }
+
+  async searchSeries(params: SearchParams): Promise<ScraperResult[]> {
+    return this.searchByType(params, 'series');
+  }
+
+  async searchAnime(params: SearchParams): Promise<ScraperResult[]> {
+    return this.searchByType(params, 'anime');
+  }
+
+  private async searchByType(params: SearchParams, contentType: ContentType): Promise<ScraperResult[]> {
+    if (!params.q && !params.imdbid) return [];
+
+    let searchQueries: string[] = [];
+    if (params.imdbid) {
+      console.log(`[DarkiworldPremium] IMDB ID provided for ${contentType}: ${params.imdbid}`);
+      searchQueries = await getSearchQueriesFromImdb(params.imdbid, params.q);
+    } else if (params.q) {
+      searchQueries = [params.q];
     }
+
+    if (searchQueries.length === 0) return [];
+
+    const allResults: ScraperResult[] = [];
+    const seenLinks = new Set<string>();
+
+    for (const query of searchQueries) {
+      // Determine API parameters based on content type
+      let typeParam: 'movie' | 'series' | undefined;
+      let seasonParam: string | undefined;
+      let epParam: string | undefined;
+
+      if (contentType === 'movie') {
+        typeParam = 'movie';
+      } else if (contentType === 'series') {
+        typeParam = 'series';
+        seasonParam = params.season;
+        epParam = params.ep;
+      }
+      // For anime, typeParam stays undefined (generic search)
+
+      const response = await this.searchDarkiworld(query, typeParam, seasonParam, epParam, params.hoster);
+      
+      if (!response.success || !response.releases || response.releases.length === 0) {
+        continue;
+      }
+
+      const mediaTitle = response.media_title || query;
+
+      for (const release of response.releases) {
+        if (!seenLinks.has(release.download_link)) {
+          seenLinks.add(release.download_link);
+          allResults.push(this.mapToScraperResult(release, mediaTitle, contentType));
+        }
+      }
+    }
+
+    return allResults;
   }
 }

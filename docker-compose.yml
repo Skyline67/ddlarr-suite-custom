@@ -10,13 +10,41 @@ services:
       - PORT=${INDEXER_PORT:-9117}
       - WAWACITY_URL=${WAWACITY_URL}
       - ZONETELECHARGER_URL=${ZONETELECHARGER_URL}
-      # - DARKIWORLD_URL=${DARKIWORLD_URL}  # Disabled - not fully implemented
-      # - DARKIWORLD_API_KEY=${DARKIWORLD_API_KEY}
+      - DARKIWORLD_SERVICE_URL=http://ddl-darkiworld:${DARKIWORLD_PORT:-5002}
       - DLPROTECT_SERVICE_URL=http://dlprotect-resolver:${DLPROTECT_RESOLVER_PORT:-5000}
       - DLPROTECT_RESOLVE_AT=${DLPROTECT_RESOLVE_AT:-indexer}
     depends_on:
       dlprotect-resolver:
         condition: service_healthy
+    restart: unless-stopped
+
+  # Darkiworld Premium Scraper Service
+  ddl-darkiworld:
+    build: ./darkiworld
+    container_name: ddl-darkiworld
+    profiles:
+      - darkiworld
+    ports:
+      - "${DARKIWORLD_PORT:-5002}:${DARKIWORLD_PORT:-5002}"
+    environment:
+      - DARKIWORLD_PORT=${DARKIWORLD_PORT:-5002}
+      - DEBUG=${DEBUG:-false}
+      - DARKIWORLD_URL=${DARKIWORLD_URL}
+      - DARKIWORLD_ALLDEBRID_KEY=${ALLDEBRID_API_KEY}
+    volumes:
+      - ./darkiworld/output:/app/output
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:${DARKIWORLD_PORT:-5002}/health",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
 
   # Botasaurus service for dl-protect resolution
@@ -33,7 +61,13 @@ services:
     volumes:
       - ./cache:/app/cache
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${DLPROTECT_RESOLVER_PORT:-5000}/health"]
+      test:
+        [
+          "CMD",
+          "curl",
+          "-f",
+          "http://localhost:${DLPROTECT_RESOLVER_PORT:-5000}/health",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5

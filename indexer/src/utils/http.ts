@@ -103,3 +103,23 @@ export function encodeSearchQuery(query: string): string {
   return encodeURIComponent(query.trim().toLowerCase())
       .replace(/%20/g, '+');
 }
+
+/**
+ * Get URL after following redirects
+ * Useful for sites like darkiworld.com that redirect to their current domain
+ */
+export async function getUrlAfterRedirect(url: string): Promise<string | null> {
+  try {
+    const client = createHttpClient();
+    const response = await client.get(url, {
+      maxRedirects: 5, // Follow up to 5 redirects
+      validateStatus: (status) => status >= 200 && status < 400, // Accept redirects
+    });
+    
+    // Return the final URL after redirects
+    return response.request.res.responseUrl || url;
+  } catch (error) {
+    console.error(`[HTTP] Error getting URL after redirect for ${url}:`, error);
+    return null;
+  }
+}

@@ -7,11 +7,15 @@ export type DownloadState =
   | 'error'       // Failed with error
   | 'stalled';    // No progress for timeout
 
+export type DownloadType = 'ddl' | 'real';
+
 export interface Download {
   hash: string;
   name: string;
-  originalLink: string;
+  type: DownloadType;                // 'ddl' for DDL-Torznab fake torrents, 'real' for real torrents
+  originalLink: string;              // DDL link or info hash for real torrents
   debridedLink: string | null;
+  debridTorrentId: string | null;    // For real torrents: ID on debrid service
   savePath: string;
   totalSize: number;
   downloadedSize: number;

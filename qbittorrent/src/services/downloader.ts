@@ -106,10 +106,12 @@ export function startDownload(
   }
 
   // curl with progress output
+  // Use --progress-bar to force progress output even when not connected to a tty
   const curlArgs = [
     '-L',
     '-o', actualTempPath,
     '--fail',
+    '--progress-bar',
   ];
 
   // Add resume flag if file exists with content
@@ -190,41 +192,61 @@ export function startDownload(
     }
 
     if (code === 0) {
-      // Move file from temp to final destination (async to not block)
+      // Check if we need to extract the archive
+      const config = getConfig();
+      if (config.autoExtractArchive && isArchive(filename)) {
+        // Extract directly from temp to final destination (skip copying the archive)
+        // Create a subfolder named after the archive (without extension)
+        const archiveBasename = getArchiveBasename(filename);
+        const extractDir = path.join(downloadPath, archiveBasename);
+
+        console.log(`[Downloader] Archive detected, extracting directly to: ${extractDir}`);
+        download.onExtracting?.(extractDir);
+
+        (async () => {
+          try {
+            // Create extraction directory
+            if (!fs.existsSync(extractDir)) {
+              fs.mkdirSync(extractDir, { recursive: true });
+            }
+
+            await extractArchive(actualTempPath, extractDir);
+            console.log(`[Downloader] Extraction complete: ${extractDir}`);
+
+            // Delete the temp archive (never copy it to final destination)
+            try {
+              fs.unlinkSync(actualTempPath);
+              console.log(`[Downloader] Deleted temp archive: ${actualTempPath}`);
+            } catch (deleteError: any) {
+              console.warn(`[Downloader] Could not delete temp archive: ${deleteError.message}`);
+            }
+
+            console.log(`[Downloader] Download complete: ${extractDir}`);
+            download.progress = 100;
+            download.onComplete?.(extractDir);
+          } catch (extractError: any) {
+            console.error(`[Downloader] Extraction failed: ${extractError.message}`);
+            // Cleanup temp file on extraction error
+            try {
+              if (fs.existsSync(actualTempPath)) {
+                fs.unlinkSync(actualTempPath);
+              }
+            } catch {}
+            download.onError?.(new Error(`Extraction failed: ${extractError.message}`));
+          } finally {
+            activeDownloads.delete(hash);
+          }
+        })();
+        return;  // Don't delete from activeDownloads yet, wait for extraction to complete
+      }
+
+      // Non-archive: move file from temp to final destination
       download.onMoving?.(finalPath);
       console.log(`[Downloader] Moving file to: ${finalPath}`);
 
       moveFileAsync(hash, actualTempPath, finalPath, download.onMoveProgress)
         .then(async () => {
           console.log(`[Downloader] File moved to: ${finalPath}`);
-
-          // Check if we need to extract the archive
-          const config = getConfig();
-          if (config.autoExtractArchive && isArchive(filename)) {
-            console.log(`[Downloader] Archive detected, extracting: ${finalPath}`);
-            download.onExtracting?.(finalPath);
-
-            try {
-              const destDir = path.dirname(finalPath);
-              await extractArchive(finalPath, destDir);
-
-              // Delete the archive after successful extraction
-              try {
-                await deleteFile(finalPath);
-              } catch (deleteError: any) {
-                // Log but don't fail if we can't delete the archive
-                console.warn(`[Downloader] Could not delete archive after extraction: ${deleteError.message}`);
-              }
-
-              console.log(`[Downloader] Extraction complete: ${finalPath}`);
-            } catch (extractError: any) {
-              console.error(`[Downloader] Extraction failed: ${extractError.message}`);
-              download.onError?.(new Error(`Extraction failed: ${extractError.message}`));
-              activeDownloads.delete(hash);
-              return;
-            }
-          }
-
           console.log(`[Downloader] Download complete: ${finalPath}`);
           download.progress = 100;
           download.onComplete?.(finalPath);
@@ -429,9 +451,58 @@ export function getDownloadProgress(hash: string): DownloadProgress | null {
 
 /**
  * Parse curl progress output
+ * Supports both default format and --progress-bar format
  */
 function parseProgress(download: ActiveDownload, output: string): void {
-  // Parse progress from curl's default output
+  // Try to parse --progress-bar format first (e.g., "###... 47.3%")
+  // This format includes a percentage at the end
+  const progressBarMatch = output.match(/(\d+\.?\d*)%/);
+  if (progressBarMatch) {
+    const percent = parseFloat(progressBarMatch[1]);
+    if (!isNaN(percent) && percent >= 0 && percent <= 100) {
+      download.progress = Math.round(percent);
+
+      // Estimate downloaded bytes based on percentage (if we know total)
+      if (download.totalBytes > 0) {
+        download.downloadedBytes = Math.round((percent / 100) * download.totalBytes);
+      }
+
+      // Try to get file size from temp file for speed estimation
+      try {
+        const stats = fs.statSync(download.tempPath);
+        const currentSize = stats.size;
+        const prevSize = download.downloadedBytes;
+
+        // Estimate speed based on file growth (rough estimate)
+        if (currentSize > prevSize) {
+          download.downloadedBytes = currentSize + download.resumeOffset;
+          // If we don't have total, estimate from progress percentage
+          if (download.totalBytes === 0 && percent > 0) {
+            download.totalBytes = Math.round((download.downloadedBytes * 100) / percent);
+          }
+        }
+      } catch (e) {
+        // Ignore file stat errors
+      }
+
+      // Notify progress
+      const eta = download.downloadSpeed > 0 && download.totalBytes > 0
+        ? Math.ceil((download.totalBytes - download.downloadedBytes) / download.downloadSpeed)
+        : 8640000;
+
+      download.onProgress?.({
+        hash: download.hash,
+        progress: download.progress,
+        downloadedBytes: download.downloadedBytes,
+        totalBytes: download.totalBytes,
+        downloadSpeed: download.downloadSpeed,
+        eta,
+      });
+      return;
+    }
+  }
+
+  // Fall back to default curl format parsing
   // Format:  5  500M    5 26.3M    0     0  10.5M      0  0:00:47  0:00:02  0:00:45 10.5M
   // Columns: % Total % Recv % Xferd AvgDl AvgUp TimeTotal TimeSpent TimeLeft CurrentSpeed
 
@@ -518,6 +589,41 @@ function parseSize(sizeStr: string): number {
     case 'T': return value * 1024 * 1024 * 1024 * 1024;
     default: return value;
   }
+}
+
+/**
+ * Get the base name of an archive file (without archive extensions)
+ * Handles multi-part archives like .part1.rar, .r00, etc.
+ */
+function getArchiveBasename(filename: string): string {
+  let basename = filename;
+
+  // Remove common archive extensions (order matters - check multi-part first)
+  const patterns = [
+    /\.part\d+\.rar$/i,     // .part1.rar, .part01.rar
+    /\.r\d{2,}$/i,          // .r00, .r01, etc.
+    /\.7z\.\d{3}$/i,        // .7z.001, .7z.002
+    /\.zip\.\d{3}$/i,       // .zip.001
+    /\.tar\.gz$/i,          // .tar.gz
+    /\.tar\.bz2$/i,         // .tar.bz2
+    /\.tar\.xz$/i,          // .tar.xz
+    /\.rar$/i,              // .rar
+    /\.zip$/i,              // .zip
+    /\.7z$/i,               // .7z
+    /\.tar$/i,              // .tar
+    /\.gz$/i,               // .gz
+    /\.bz2$/i,              // .bz2
+    /\.xz$/i,               // .xz
+  ];
+
+  for (const pattern of patterns) {
+    if (pattern.test(basename)) {
+      basename = basename.replace(pattern, '');
+      break;
+    }
+  }
+
+  return basename;
 }
 
 /**

@@ -28,6 +28,9 @@ jobs:
           - name: ddl-qbittorrent
             context: ./qbittorrent
             dockerfile: ./qbittorrent/Dockerfile
+          - name: darkiworld
+            context: ./darkiworld
+            dockerfile: ./darkiworld/Dockerfile
 
     steps:
       - name: Checkout repository

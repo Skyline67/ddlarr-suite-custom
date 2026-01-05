@@ -47,6 +47,8 @@ Le projet se compose de plusieurs services Docker. Deux approches sont possibles
 
 Cette approche simule un vrai client qBittorrent. Sonarr/Radarr communiquent directement avec ddl-qbittorrent comme s'il s'agissait d'un vrai client torrent.
 
+**Supporte les vrais torrents !** En plus des fake torrents DDL, ddl-qbittorrent peut recevoir de vrais fichiers .torrent et les envoyer automatiquement aux services de debrid (AllDebrid, RealDebrid, Premiumize) pour telechargement.
+
 ### Option B : Blackhole + Client externe
 
 | Service | Port par défaut | Description |
@@ -180,6 +182,35 @@ docker compose --profile qbittorrent up -d
 | `ALLDEBRID_API_KEY` | Clé API AllDebrid | - |
 | `REALDEBRID_ENABLED` | Activer RealDebrid | false |
 | `REALDEBRID_API_KEY` | Clé API RealDebrid | - |
+| `PREMIUMIZE_ENABLED` | Activer Premiumize | false |
+| `PREMIUMIZE_API_KEY` | Clé API Premiumize | - |
+| `DEBRID_TORRENT_TIMEOUT` | Timeout pour le debrid de vrais torrents (heures) | 24 |
+
+### Support des vrais torrents
+
+DDL-qBittorrent detecte automatiquement le type de torrent recu :
+- **Fake torrent DDL** (cree par ddl-torznab) : Le lien DDL est extrait et debride normalement
+- **Vrai torrent** : Le fichier .torrent est envoye au service de debrid qui le telecharge
+
+#### Comment ca marche
+
+1. Sonarr/Radarr envoie un fichier .torrent a ddl-qbittorrent
+2. DDL-qBittorrent analyse le torrent :
+   - Si `created by: DDL-Torznab` → traitement DDL classique
+   - Sinon → envoi au service de debrid
+3. Pour les vrais torrents :
+   - Upload du .torrent vers AllDebrid/RealDebrid/Premiumize
+   - Attente que le debrid telecharge le torrent (peut prendre du temps si pas en cache)
+   - Telechargement des fichiers depuis le debrid
+
+#### Messages de statut
+
+- `Uploading torrent to debrid...` - Envoi du torrent au service
+- `Queued on AllDebrid...` - En attente dans la file du debrid
+- `Downloading on debrid: 45%` - Le debrid telecharge le torrent
+- `Downloading from debrid...` - Telechargement des fichiers depuis le debrid
+
+> **Note** : Les vrais torrents non caches peuvent prendre du temps (le debrid doit telecharger depuis les seeders). Le timeout par defaut est de 24 heures.
 
 ### Flux de téléchargement (Option A)
 
@@ -277,6 +308,11 @@ docker compose --profile blackhole up -d
 | ZoneTelecharger | `http://<IP>:9117/api/zonetelecharger/` |
 
 > Remplacer `<IP>` par l'adresse du serveur (ex: `192.168.1.100`, `localhost`, ou votre domaine)
+
+### Intégration Prowlarr
+
+Pour une intégration simplifiée avec Prowlarr, une définition Cardigann custom est disponible.
+Voir [prowlarr/README.md](prowlarr/README.md) pour les instructions d'installation.
 
 ### Filtrage par hébergeur
 

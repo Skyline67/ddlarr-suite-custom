@@ -1,12 +1,12 @@
 import { getDatabase } from './schema.js';
-import type { Download, DownloadState } from '../types/download.js';
+import type { Download, DownloadState, DownloadType } from '../types/download.js';
 
 // ==================== Downloads ====================
 
 export function getAllDownloads(): Download[] {
   const db = getDatabase();
   const rows = db.prepare(`
-    SELECT hash, name, original_link, debrided_link, save_path,
+    SELECT hash, name, type, original_link, debrided_link, debrid_torrent_id, save_path,
            total_size, downloaded_size, download_speed, state,
            status_message, error_message, added_at, started_at, completed_at, category, priority
     FROM downloads
@@ -19,7 +19,7 @@ export function getAllDownloads(): Download[] {
 export function getDownloadsByState(state: DownloadState): Download[] {
   const db = getDatabase();
   const rows = db.prepare(`
-    SELECT hash, name, original_link, debrided_link, save_path,
+    SELECT hash, name, type, original_link, debrided_link, debrid_torrent_id, save_path,
            total_size, downloaded_size, download_speed, state,
            status_message, error_message, added_at, started_at, completed_at, category, priority
     FROM downloads
@@ -33,7 +33,7 @@ export function getDownloadsByState(state: DownloadState): Download[] {
 export function getDownloadByHash(hash: string): Download | null {
   const db = getDatabase();
   const row = db.prepare(`
-    SELECT hash, name, original_link, debrided_link, save_path,
+    SELECT hash, name, type, original_link, debrided_link, debrid_torrent_id, save_path,
            total_size, downloaded_size, download_speed, state,
            status_message, error_message, added_at, started_at, completed_at, category, priority
     FROM downloads
@@ -46,15 +46,17 @@ export function getDownloadByHash(hash: string): Download | null {
 export function createDownload(download: Omit<Download, 'downloadSpeed'>): void {
   const db = getDatabase();
   db.prepare(`
-    INSERT INTO downloads (hash, name, original_link, debrided_link, save_path,
+    INSERT INTO downloads (hash, name, type, original_link, debrided_link, debrid_torrent_id, save_path,
                           total_size, downloaded_size, state, status_message, error_message,
                           added_at, started_at, completed_at, category, priority)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     download.hash,
     download.name,
+    download.type,
     download.originalLink,
     download.debridedLink,
+    download.debridTorrentId,
     download.savePath,
     download.totalSize,
     download.downloadedSize,
@@ -145,12 +147,22 @@ export function deleteDownload(hash: string): void {
   db.prepare('DELETE FROM downloads WHERE hash = ?').run(hash);
 }
 
+export function updateDebridTorrentId(hash: string, debridTorrentId: string): void {
+  const db = getDatabase();
+  db.prepare(`
+    UPDATE downloads SET debrid_torrent_id = ?
+    WHERE hash = ?
+  `).run(debridTorrentId, hash);
+}
+
 function mapRowToDownload(row: any): Download {
   return {
     hash: row.hash,
     name: row.name,
+    type: (row.type || 'ddl') as DownloadType,
     originalLink: row.original_link,
     debridedLink: row.debrided_link,
+    debridTorrentId: row.debrid_torrent_id,
     savePath: row.save_path,
     totalSize: row.total_size,
     downloadedSize: row.downloaded_size,

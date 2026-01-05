@@ -57,6 +57,20 @@ function initSchema(db: Database.Database): void {
     // Column already exists, ignore
   }
 
+  // Migration: Add type column for real torrent support
+  try {
+    db.exec(`ALTER TABLE downloads ADD COLUMN type TEXT DEFAULT 'ddl'`);
+  } catch {
+    // Column already exists, ignore
+  }
+
+  // Migration: Add debrid_torrent_id column for real torrent support
+  try {
+    db.exec(`ALTER TABLE downloads ADD COLUMN debrid_torrent_id TEXT`);
+  } catch {
+    // Column already exists, ignore
+  }
+
   // Sessions table
   db.exec(`
     CREATE TABLE IF NOT EXISTS sessions (

@@ -182,8 +182,6 @@ async function executeSearch(ctx: SearchContext): Promise<string> {
       break;
     }
     case 'movie':
-      // Only search if imdbid is provided to avoid duplicate results
-      // (Radarr sends both text and imdbid searches)
       if (searchParams.imdbid) {
         results = await scraper.searchMovies(searchParams);
       } else {
@@ -192,8 +190,6 @@ async function executeSearch(ctx: SearchContext): Promise<string> {
       }
       break;
     case 'tvsearch':
-      // Only search if imdbid is provided to avoid duplicate results
-      // (Sonarr sends both text and imdbid searches)
       if (searchParams.imdbid) {
         results = await scraper.searchSeries(searchParams);
       } else {

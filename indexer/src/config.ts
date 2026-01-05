@@ -1,5 +1,6 @@
 import { config as dotenvConfig } from 'dotenv';
 import { getSiteUrlFromTelegram, getDefaultTelegramChannel } from './utils/telegram.js';
+import { getUrlAfterRedirect } from './utils/http.js';
 
 dotenvConfig();
 
@@ -8,10 +9,11 @@ export const config = {
   port: parseInt(process.env.PORT || '9117', 10),
   host: process.env.HOST || '0.0.0.0',
 
-  // Site URLs from env (may be empty - will be resolved from Telegram)
+  // Site URLs from env (may be empty - will be resolved dynamically)
   sites: {
     wawacity: process.env.WAWACITY_URL || '',
     zonetelecharger: process.env.ZONETELECHARGER_URL || '',
+    darkiworld: process.env.DARKIWORLD_URL || '',
   },
 
   // Telegram channel URLs for dynamic URL resolution
@@ -22,6 +24,7 @@ export const config = {
 
   dlprotectServiceUrl: process.env.DLPROTECT_SERVICE_URL || 'http://localhost:5000',
   dlprotectResolveAt: (process.env.DLPROTECT_RESOLVE_AT || 'indexer') as 'indexer' | 'downloader',
+  darkiworldServiceUrl: process.env.DARKIWORLD_SERVICE_URL || 'http://localhost:5002',
   searchMaxPages: parseInt(process.env.SEARCH_MAX_PAGES || '5', 10),
   disableRemoteDlProtectCache: process.env.DISABLE_REMOTE_DL_PROTECT_CACHE === 'true',
 } as const;
@@ -30,16 +33,21 @@ export const config = {
 const resolvedSiteUrls: Record<SiteType, string> = {
   wawacity: config.sites.wawacity,
   zonetelecharger: config.sites.zonetelecharger,
+  darkiworld: config.sites.darkiworld,
+  'darkiworld-premium': config.darkiworldServiceUrl,
 };
 
-export type SiteType = 'wawacity' | 'zonetelecharger';
+export type SiteType = 'wawacity' | 'zonetelecharger' | 'darkiworld' | 'darkiworld-premium';
+
+// Sites that use Telegram for URL resolution (excludes darkiworld-premium which is a service)
+type TelegramSiteType = 'wawacity' | 'zonetelecharger';
 
 /**
- * Initialize site URLs - fetches from Telegram if not configured in env
+ * Initialize site URLs - fetches from Telegram or redirect if not configured in env
  * Should be called at application startup
  */
 export async function initializeSiteUrls(): Promise<void> {
-  const sites: SiteType[] = ['wawacity', 'zonetelecharger'];
+  const sites: TelegramSiteType[] = ['wawacity', 'zonetelecharger'];
 
   for (const site of sites) {
     if (!config.sites[site]) {
@@ -55,6 +63,23 @@ export async function initializeSiteUrls(): Promise<void> {
       console.log(`[Config] ${site} URL configured: ${config.sites[site]}`);
     }
   }
+
+  // Darkiworld URL resolution from redirect
+  if (!config.sites.darkiworld) {
+    console.log(`[Config] darkiworld URL not configured, fetching from redirect...`);
+    const url = await getUrlAfterRedirect('https://darkiworld.com/');
+    if (url) {
+      resolvedSiteUrls.darkiworld = url;
+      console.log(`[Config] darkiworld URL resolved: ${url}`);
+    } else {
+      console.warn(`[Config] Could not resolve darkiworld URL from redirect`);
+    }
+  } else {
+    console.log(`[Config] darkiworld URL configured: ${config.sites.darkiworld}`);
+  }
+
+  // Darkiworld Premium is a service URL, always configured from env
+  console.log(`[Config] darkiworld-premium service URL: ${config.darkiworldServiceUrl}`);
 }
 
 /**
@@ -68,7 +93,7 @@ export function getSiteUrl(site: SiteType): string {
  * Refresh site URLs from Telegram (for sites not configured via env)
  */
 async function refreshSiteUrls(): Promise<void> {
-  const sites: SiteType[] = ['wawacity', 'zonetelecharger'];
+  const sites: TelegramSiteType[] = ['wawacity', 'zonetelecharger'];
 
   for (const site of sites) {
     // Only refresh URLs that come from Telegram (not env vars)
@@ -78,6 +103,15 @@ async function refreshSiteUrls(): Promise<void> {
         console.log(`[Config] ${site} URL updated: ${resolvedSiteUrls[site]} -> ${url}`);
         resolvedSiteUrls[site] = url;
       }
+    }
+  }
+
+  // Refresh darkiworld URL from redirect (not env vars)
+  if (!config.sites.darkiworld) {
+    const url = await getUrlAfterRedirect('https://darkiworld.com/');
+    if (url && url !== resolvedSiteUrls.darkiworld) {
+      console.log(`[Config] darkiworld URL updated: ${resolvedSiteUrls.darkiworld} -> ${url}`);
+      resolvedSiteUrls.darkiworld = url;
     }
   }
 }
