@@ -41,30 +41,27 @@ interface MagnetUploadFileResponse {
   }>;
 }
 
-// v4.1 magnet status response (magnets is an array)
+// v4.1 magnet status response
+// When querying by id: magnets is a single object
+// When querying all: magnets is an array
 interface MagnetStatusResponse {
-  magnets: Array<{
-    id: number;
-    filename: string;
-    size: number;
-    status: string;
-    statusCode: number;
-    downloaded: number;
-    uploaded: number;
-    seeders: number;
-    downloadSpeed: number;
-    uploadSpeed: number;
-    uploadDate: number;
-    completionDate: number;
-  }>;
+  magnets: MagnetStatusItem | MagnetStatusItem[];
 }
 
-// v4 magnet files response
-interface MagnetFilesResponse {
-  magnets: Array<{
-    id: string;
-    files: MagnetFile[];
-  }>;
+interface MagnetStatusItem {
+  id: number;
+  filename: string;
+  size: number;
+  status: string;
+  statusCode: number;
+  downloaded?: number;
+  uploaded?: number;
+  seeders?: number;
+  downloadSpeed?: number;
+  uploadSpeed?: number;
+  uploadDate: number;
+  completionDate: number;
+  files?: MagnetFile[];  // Files are included when ready
 }
 
 interface MagnetFile {
@@ -231,9 +228,13 @@ export class AllDebridClient implements DebridService {
 
     console.log(`[AllDebrid] Status response:`, JSON.stringify(response.data, null, 2));
 
-    const magnets = response.data.data?.magnets;
-    if (response.data.status === 'success' && magnets && magnets.length > 0) {
-      const magnet = magnets[0];
+    const magnetsData = response.data.data?.magnets;
+    if (response.data.status === 'success' && magnetsData) {
+      // Handle both single object (query by id) and array (query all)
+      const magnet = Array.isArray(magnetsData) ? magnetsData[0] : magnetsData;
+      if (!magnet) {
+        throw new Error('No magnet found in response');
+      }
 
       // AllDebrid v4.1 statusCode:
       // 0: In Queue
@@ -250,7 +251,7 @@ export class AllDebridClient implements DebridService {
         status = 'queued';
       } else if (magnet.statusCode >= 1 && magnet.statusCode <= 3) {
         status = 'downloading';
-        if (magnet.size > 0) {
+        if (magnet.size > 0 && magnet.downloaded) {
           progress = Math.round((magnet.downloaded / magnet.size) * 100);
         }
       } else if (magnet.statusCode === 4) {
@@ -266,16 +267,9 @@ export class AllDebridClient implements DebridService {
         progress,
       };
 
-      // If ready, fetch download links from /magnet/files endpoint
-      if (status === 'ready') {
-        try {
-          const links = await this.getMagnetFiles(torrentId);
-          if (links.length > 0) {
-            result.downloadLinks = links;
-          }
-        } catch (error: any) {
-          console.error(`[AllDebrid] Failed to get files: ${error.message}`);
-        }
+      // Files are included in the status response when ready
+      if (status === 'ready' && magnet.files && magnet.files.length > 0) {
+        result.downloadLinks = this.extractLinksFromFiles(magnet.files);
       }
 
       if (status === 'error') {
@@ -298,46 +292,23 @@ export class AllDebridClient implements DebridService {
   }
 
   /**
-   * Get download links for a magnet from /v4/magnet/files
+   * Extract download links from files array (recursive for nested folders)
    */
-  private async getMagnetFiles(torrentId: string): Promise<string[]> {
-    const config = getConfig().debrid.alldebrid;
+  private extractLinksFromFiles(files: MagnetFile[]): string[] {
+    const links: string[] = [];
 
-    const formData = new FormData();
-    formData.append('id[]', torrentId);
-
-    const response = await axios.post<AllDebridResponse<MagnetFilesResponse>>(
-      `${ALLDEBRID_API_BASE}/magnet/files`,
-      formData,
-      {
-        headers: {
-          'Authorization': `Bearer ${config.apiKey}`,
-        },
-        timeout: 30000,
-      }
-    );
-
-    const fileMagnets = response.data.data?.magnets;
-    if (response.data.status === 'success' && fileMagnets && fileMagnets.length > 0) {
-      const magnetFiles = fileMagnets[0];
-      const links: string[] = [];
-
-      // Recursively extract all file links
-      const extractLinks = (files: MagnetFile[]) => {
-        for (const file of files) {
-          if (file.l) {
-            links.push(file.l);
-          }
-          if (file.e) {
-            extractLinks(file.e);
-          }
+    const extractLinks = (fileList: MagnetFile[]) => {
+      for (const file of fileList) {
+        if (file.l) {
+          links.push(file.l);
         }
-      };
+        if (file.e) {
+          extractLinks(file.e);
+        }
+      }
+    };
 
-      extractLinks(magnetFiles.files);
-      return links;
-    }
-
-    return [];
+    extractLinks(files);
+    return links;
   }
 }
