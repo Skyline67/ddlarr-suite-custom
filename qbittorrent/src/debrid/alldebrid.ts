@@ -152,15 +152,16 @@ export class AllDebridClient implements DebridService {
       throw new Error('AllDebrid not configured');
     }
 
-    console.log(`[AllDebrid] Uploading torrent: ${filename}`);
+    console.log(`[AllDebrid] Uploading torrent file: ${filename}`);
 
     const formData = new FormData();
     // Convert Buffer to Uint8Array for Blob compatibility
     const blob = new Blob([new Uint8Array(torrentBuffer)], { type: 'application/x-bittorrent' });
     formData.append('files[]', blob, filename);
 
+    // Use /magnet/upload/file for torrent files (not /magnet/upload which is for magnet URIs)
     const response = await axios.post<AllDebridResponse<MagnetUploadResponse>>(
-      `${ALLDEBRID_API_BASE}/magnet/upload`,
+      `${ALLDEBRID_API_BASE}/magnet/upload/file`,
       formData,
       {
         headers: {
