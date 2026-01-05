@@ -447,11 +447,17 @@ class DownloadManager {
             );
           },
           onMoving: (finalPath) => {
+            // Set progress to 100% and speed to 0 when moving starts
+            const dl = repository.getDownloadByHash(hash);
+            if (dl && dl.totalSize > 0) {
+              repository.updateDownloadProgress(hash, dl.totalSize, dl.totalSize, 0);
+            }
             repository.updateDownloadStatusMessage(hash, `Déplacement vers ${finalPath}...`);
             console.log(`[DownloadManager] Moving: ${name} -> ${finalPath}`);
           },
           onMoveProgress: (copiedBytes, totalBytes) => {
             const percent = Math.round((copiedBytes / totalBytes) * 100);
+            console.log(`[DownloadManager] Copy progress: ${name} - ${percent}%`);
             repository.updateDownloadStatusMessage(hash, `Copie en cours... ${percent}%`);
           },
           onExtracting: (finalPath) => {
@@ -577,11 +583,17 @@ class DownloadManager {
           );
         },
         onMoving: (finalPath) => {
+          // Set progress to 100% and speed to 0 when moving starts
+          const dl = repository.getDownloadByHash(hash);
+          if (dl && dl.totalSize > 0) {
+            repository.updateDownloadProgress(hash, dl.totalSize, dl.totalSize, 0);
+          }
           repository.updateDownloadStatusMessage(hash, `Déplacement vers ${finalPath}...`);
           console.log(`[DownloadManager] Moving: ${name} -> ${finalPath}`);
         },
         onMoveProgress: (copiedBytes, totalBytes) => {
           const percent = Math.round((copiedBytes / totalBytes) * 100);
+          console.log(`[DownloadManager] Copy progress: ${name} - ${percent}%`);
           repository.updateDownloadStatusMessage(hash, `Copie en cours... ${percent}%`);
         },
         onExtracting: (finalPath) => {
