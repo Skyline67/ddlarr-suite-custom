@@ -1,15 +1,17 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { getConfig } from '../config.js';
 import { generateDownloadHash } from '../utils/hash.js';
 import {
-  extractLinkFromTorrentBuffer,
+  analyzeTorrent,
   extractNameFromTorrentBuffer,
   extractSizeFromTorrentBuffer,
 } from '../utils/torrent.js';
 import { isDlProtectLink, resolveDlProtectLink } from '../utils/dlprotect.js';
-import { debridLink, isAnyDebridEnabled } from '../debrid/index.js';
+import { debridLink, debridTorrent, isAnyDebridEnabled, getTorrentEnabledServices } from '../debrid/index.js';
 import { startDownload, stopDownload, pauseDownload, getDownloadProgress, isDownloadActive, isDownloadPaused, getPausedDownloadInfo } from './downloader.js';
 import * as repository from '../db/repository.js';
-import type { Download, DownloadState } from '../types/download.js';
+import type { Download, DownloadState, DownloadType } from '../types/download.js';
 
 /**
  * Format bytes per second to human readable speed
@@ -128,31 +130,61 @@ class DownloadManager {
   private processing = false;
 
   /**
+   * Get the path where torrent files are stored
+   */
+  private getTorrentStoragePath(): string {
+    const config = getConfig();
+    const torrentDir = path.join(config.dataPath, 'torrents');
+    if (!fs.existsSync(torrentDir)) {
+      fs.mkdirSync(torrentDir, { recursive: true });
+    }
+    return torrentDir;
+  }
+
+  /**
+   * Save torrent file for later use
+   */
+  private saveTorrentFile(hash: string, torrentData: Buffer): void {
+    const torrentPath = path.join(this.getTorrentStoragePath(), `${hash}.torrent`);
+    fs.writeFileSync(torrentPath, torrentData);
+    console.log(`[DownloadManager] Saved torrent file: ${torrentPath}`);
+  }
+
+  /**
+   * Load torrent file
+   */
+  private loadTorrentFile(hash: string): Buffer | null {
+    const torrentPath = path.join(this.getTorrentStoragePath(), `${hash}.torrent`);
+    if (fs.existsSync(torrentPath)) {
+      return fs.readFileSync(torrentPath);
+    }
+    return null;
+  }
+
+  /**
+   * Delete torrent file
+   */
+  private deleteTorrentFile(hash: string): void {
+    const torrentPath = path.join(this.getTorrentStoragePath(), `${hash}.torrent`);
+    if (fs.existsSync(torrentPath)) {
+      fs.unlinkSync(torrentPath);
+      console.log(`[DownloadManager] Deleted torrent file: ${torrentPath}`);
+    }
+  }
+
+  /**
    * Add a torrent from file data
    */
   async addTorrent(
     torrentData: Buffer,
     options: { savePath?: string; category?: string; paused?: boolean } = {}
   ): Promise<string> {
-    // Extract information from torrent
-    const link = extractLinkFromTorrentBuffer(torrentData);
-    if (!link) {
-      throw new Error('No DDL link found in torrent file');
+    // Analyze torrent to determine type
+    const analysis = analyzeTorrent(torrentData);
+    if (!analysis) {
+      throw new Error('Invalid torrent file');
     }
 
-    let name = extractNameFromTorrentBuffer(torrentData);
-    if (!name) {
-      // Extract filename from URL
-      try {
-        const url = new URL(link);
-        name = decodeURIComponent(url.pathname.split('/').pop() || '') || `download_${Date.now()}`;
-      } catch {
-        name = `download_${Date.now()}`;
-      }
-    }
-
-    const size = extractSizeFromTorrentBuffer(torrentData) || 0;
-    const hash = generateDownloadHash(link);
     const config = getConfig();
 
     // Build save path with category subfolder if specified
@@ -161,33 +193,79 @@ class DownloadManager {
       savePath = `${config.downloadPath}/${options.category}`;
     }
 
-    const download: Omit<Download, 'downloadSpeed'> = {
-      hash,
-      name,
-      originalLink: link,
-      debridedLink: null,
-      savePath,
-      totalSize: size,
-      downloadedSize: 0,
-      state: options.paused ? 'paused' : 'queued',
-      statusMessage: null,
-      errorMessage: null,
-      addedAt: Date.now(),
-      startedAt: null,
-      completedAt: null,
-      category: options.category || null,
-      priority: 0,
-    };
+    if (analysis.type === 'ddl') {
+      // DDL fake torrent - use original flow
+      const hash = generateDownloadHash(analysis.ddlLink!);
 
-    repository.createDownload(download);
-    console.log(`[DownloadManager] Added download: ${name} (${hash})`);
+      const download: Omit<Download, 'downloadSpeed'> = {
+        hash,
+        name: analysis.name,
+        type: 'ddl',
+        originalLink: analysis.ddlLink!,
+        debridedLink: null,
+        debridTorrentId: null,
+        savePath,
+        totalSize: analysis.size,
+        downloadedSize: 0,
+        state: options.paused ? 'paused' : 'queued',
+        statusMessage: null,
+        errorMessage: null,
+        addedAt: Date.now(),
+        startedAt: null,
+        completedAt: null,
+        category: options.category || null,
+        priority: 0,
+      };
 
-    // Process queue if not paused
-    if (!options.paused) {
-      this.processQueue();
+      repository.createDownload(download);
+      console.log(`[DownloadManager] Added DDL download: ${analysis.name} (${hash})`);
+
+      if (!options.paused) {
+        this.processQueue();
+      }
+
+      return hash;
+    } else {
+      // Real torrent - check if debrid service supports it
+      const torrentServices = getTorrentEnabledServices();
+      if (torrentServices.length === 0) {
+        throw new Error('No debrid service with torrent support is enabled');
+      }
+
+      const hash = analysis.infoHash!;
+
+      // Save torrent file for later processing
+      this.saveTorrentFile(hash, torrentData);
+
+      const download: Omit<Download, 'downloadSpeed'> = {
+        hash,
+        name: analysis.name,
+        type: 'real',
+        originalLink: hash,  // Store info hash as original link for real torrents
+        debridedLink: null,
+        debridTorrentId: null,
+        savePath,
+        totalSize: analysis.size,
+        downloadedSize: 0,
+        state: options.paused ? 'paused' : 'queued',
+        statusMessage: null,
+        errorMessage: null,
+        addedAt: Date.now(),
+        startedAt: null,
+        completedAt: null,
+        category: options.category || null,
+        priority: 0,
+      };
+
+      repository.createDownload(download);
+      console.log(`[DownloadManager] Added real torrent: ${analysis.name} (${hash})`);
+
+      if (!options.paused) {
+        this.processQueue();
+      }
+
+      return hash;
     }
-
-    return hash;
   }
 
   /**
@@ -219,8 +297,10 @@ class DownloadManager {
     const download: Omit<Download, 'downloadSpeed'> = {
       hash,
       name,
+      type: 'ddl',  // URL downloads are always treated as DDL
       originalLink: url,
       debridedLink: null,
+      debridTorrentId: null,
       savePath,
       totalSize: 0,
       downloadedSize: 0,
@@ -295,9 +375,6 @@ class DownloadManager {
    * Delete downloads
    */
   async delete(hashes: string[], deleteFiles: boolean): Promise<void> {
-    const fs = await import('fs');
-    const path = await import('path');
-
     for (const hash of hashes) {
       const download = repository.getDownloadByHash(hash);
       if (!download) continue;
@@ -318,6 +395,11 @@ class DownloadManager {
         } catch (error: any) {
           console.error(`[DownloadManager] Error deleting file: ${error.message}`);
         }
+      }
+
+      // Delete stored torrent file if real torrent
+      if (download.type === 'real') {
+        this.deleteTorrentFile(hash);
       }
 
       repository.deleteDownload(hash);
@@ -431,6 +513,155 @@ class DownloadManager {
    * Start processing a download (resolve links, debrid, start download)
    */
   private async startProcessing(download: Download): Promise<void> {
+    // Route to appropriate handler based on type
+    if (download.type === 'real') {
+      await this.startProcessingRealTorrent(download);
+    } else {
+      await this.startProcessingDdl(download);
+    }
+  }
+
+  /**
+   * Process a real torrent (upload to debrid, wait for completion, download files)
+   */
+  private async startProcessingRealTorrent(download: Download): Promise<void> {
+    const { hash, name, savePath } = download;
+
+    try {
+      repository.updateDownloadState(hash, 'checking');
+
+      // Load torrent file
+      const torrentBuffer = this.loadTorrentFile(hash);
+      if (!torrentBuffer) {
+        throw new Error('Torrent file not found');
+      }
+
+      // Upload to debrid service
+      repository.updateDownloadStatusMessage(hash, 'Uploading torrent to debrid...');
+      console.log(`[DownloadManager] Uploading real torrent: ${name}`);
+
+      const config = getConfig();
+      const timeoutMs = config.debridTorrentTimeoutHours * 60 * 60 * 1000;
+
+      const result = await debridTorrent(
+        torrentBuffer,
+        `${name}.torrent`,
+        (status, serviceName) => {
+          // Update status message based on debrid status
+          if (status.status === 'queued') {
+            repository.updateDownloadStatusMessage(hash, `Queued on ${serviceName}...`);
+          } else if (status.status === 'downloading') {
+            repository.updateDownloadStatusMessage(hash, `Downloading on debrid: ${status.progress}%`);
+          }
+        },
+        timeoutMs
+      );
+
+      console.log(`[DownloadManager] Torrent ready on ${result.service}, ${result.downloadLinks.length} file(s)`);
+
+      // Clean up torrent file after successful debrid
+      this.deleteTorrentFile(hash);
+
+      // If single file, download it directly
+      // If multiple files, download each sequentially
+      if (result.downloadLinks.length === 1) {
+        const debridedUrl = result.downloadLinks[0];
+        repository.updateDownloadLink(hash, debridedUrl);
+
+        // Get real filename
+        repository.updateDownloadStatusMessage(hash, 'Getting file info...');
+        let actualName = name;
+        try {
+          actualName = await getRealFilename(debridedUrl, name);
+          if (actualName !== name) {
+            repository.updateDownloadName(hash, actualName);
+          }
+        } catch (error: any) {
+          console.log(`[DownloadManager] Could not get real filename: ${error.message}`);
+        }
+
+        // Start download
+        repository.updateDownloadStatusMessage(hash, null);
+        repository.updateDownloadState(hash, 'downloading');
+
+        startDownload(hash, debridedUrl, actualName, {
+          onProgress: (progress) => {
+            repository.updateDownloadProgress(hash, progress.downloadedBytes, progress.totalBytes, progress.downloadSpeed);
+          },
+          onMoving: (finalPath) => {
+            const dl = repository.getDownloadByHash(hash);
+            if (dl && dl.totalSize > 0) {
+              repository.updateDownloadProgress(hash, dl.totalSize, dl.totalSize, 0);
+            }
+            repository.updateDownloadStatusMessage(hash, `Moving to ${finalPath}...`);
+          },
+          onMoveProgress: (copiedBytes, totalBytes, speed) => {
+            const percent = Math.round((copiedBytes / totalBytes) * 100);
+            repository.updateDownloadStatusMessage(hash, `Copying... ${percent}% - ${formatSpeed(speed)}`);
+          },
+          onExtracting: () => {
+            repository.updateDownloadStatusMessage(hash, 'Extracting...');
+          },
+          onComplete: () => {
+            repository.updateDownloadState(hash, 'completed');
+            console.log(`[DownloadManager] Completed: ${name}`);
+            this.processQueue();
+          },
+          onError: (error) => {
+            repository.updateDownloadState(hash, 'error', error.message);
+            console.error(`[DownloadManager] Error: ${name} - ${error.message}`);
+            this.processQueue();
+          },
+          onPaused: () => {
+            console.log(`[DownloadManager] Download paused: ${name}`);
+          },
+        }, result.totalSize, savePath);
+      } else {
+        // Multiple files - download them sequentially
+        // For now, download the first one (TODO: handle multi-file torrents properly)
+        console.log(`[DownloadManager] Multi-file torrent with ${result.downloadLinks.length} files, downloading first`);
+        const debridedUrl = result.downloadLinks[0];
+        repository.updateDownloadLink(hash, debridedUrl);
+
+        repository.updateDownloadStatusMessage(hash, null);
+        repository.updateDownloadState(hash, 'downloading');
+
+        startDownload(hash, debridedUrl, name, {
+          onProgress: (progress) => {
+            repository.updateDownloadProgress(hash, progress.downloadedBytes, progress.totalBytes, progress.downloadSpeed);
+          },
+          onMoving: (finalPath) => {
+            repository.updateDownloadStatusMessage(hash, `Moving to ${finalPath}...`);
+          },
+          onMoveProgress: (copiedBytes, totalBytes, speed) => {
+            const percent = Math.round((copiedBytes / totalBytes) * 100);
+            repository.updateDownloadStatusMessage(hash, `Copying... ${percent}% - ${formatSpeed(speed)}`);
+          },
+          onExtracting: () => {
+            repository.updateDownloadStatusMessage(hash, 'Extracting...');
+          },
+          onComplete: () => {
+            repository.updateDownloadState(hash, 'completed');
+            this.processQueue();
+          },
+          onError: (error) => {
+            repository.updateDownloadState(hash, 'error', error.message);
+            this.processQueue();
+          },
+          onPaused: () => {},
+        }, result.totalSize, savePath);
+      }
+    } catch (error: any) {
+      repository.updateDownloadState(hash, 'error', error.message);
+      console.error(`[DownloadManager] Real torrent error: ${name} - ${error.message}`);
+      this.processQueue();
+    }
+  }
+
+  /**
+   * Process a DDL download (original flow)
+   */
+  private async startProcessingDdl(download: Download): Promise<void> {
     const { hash, originalLink, debridedLink, name, savePath } = download;
 
     try {

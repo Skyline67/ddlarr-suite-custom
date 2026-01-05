@@ -262,7 +262,8 @@ export class WawacityScraper implements BaseScraper {
     });
 
     // Fallback: utilise les anciens sélecteurs si aucun résultat
-    if (results.length === 0) {
+    // @deprecated : doit être supprimé
+    if (false && results.length === 0) {
       const selector = RESULT_SELECTORS[contentType];
       $(selector).each((_, element) => {
         try {
