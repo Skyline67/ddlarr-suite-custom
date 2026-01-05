@@ -29,6 +29,17 @@ interface MagnetUploadResponse {
   }>;
 }
 
+interface MagnetUploadFileResponse {
+  files: Array<{
+    file: string;
+    name: string;
+    hash: string;
+    id: number;
+    size: number;
+    ready: boolean;
+  }>;
+}
+
 interface MagnetStatusResponse {
   magnets: {
     id: number;
@@ -160,7 +171,7 @@ export class AllDebridClient implements DebridService {
     formData.append('files[]', blob, filename);
 
     // Use /magnet/upload/file for torrent files (not /magnet/upload which is for magnet URIs)
-    const response = await axios.post<AllDebridResponse<MagnetUploadResponse>>(
+    const response = await axios.post<AllDebridResponse<MagnetUploadFileResponse>>(
       `${ALLDEBRID_API_BASE}/magnet/upload/file`,
       formData,
       {
@@ -171,10 +182,10 @@ export class AllDebridClient implements DebridService {
       }
     );
 
-    if (response.data.status === 'success' && response.data.data?.magnets?.[0]) {
-      const magnet = response.data.data.magnets[0];
-      console.log(`[AllDebrid] Torrent uploaded, id: ${magnet.id}, ready: ${magnet.ready}`);
-      return String(magnet.id);
+    if (response.data.status === 'success' && response.data.data?.files?.[0]) {
+      const file = response.data.data.files[0];
+      console.log(`[AllDebrid] Torrent uploaded, id: ${file.id}, name: ${file.name}, ready: ${file.ready}`);
+      return String(file.id);
     }
 
     if (response.data.error) {
