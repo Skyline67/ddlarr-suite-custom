@@ -268,8 +268,23 @@ export class AllDebridClient implements DebridService {
       };
 
       // Files are included in the status response when ready
+      // Links need to be unlocked via /link/unlock to get actual download URLs
       if (status === 'ready' && magnet.files && magnet.files.length > 0) {
-        result.downloadLinks = this.extractLinksFromFiles(magnet.files);
+        const rawLinks = this.extractLinksFromFiles(magnet.files);
+        const unlockedLinks: string[] = [];
+
+        for (const link of rawLinks) {
+          try {
+            const unlocked = await this.debridLink(link);
+            unlockedLinks.push(unlocked);
+          } catch (error: any) {
+            console.error(`[AllDebrid] Failed to unlock link ${link}: ${error.message}`);
+          }
+        }
+
+        if (unlockedLinks.length > 0) {
+          result.downloadLinks = unlockedLinks;
+        }
       }
 
       if (status === 'error') {
