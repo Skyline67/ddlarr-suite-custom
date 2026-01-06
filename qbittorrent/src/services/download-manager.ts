@@ -649,10 +649,23 @@ class DownloadManager {
         const debridedUrl = result.downloadLinks[0];
         repository.updateDownloadLink(hash, debridedUrl);
 
+        // Get real filename from URL for multi-file torrents
+        repository.updateDownloadStatusMessage(hash, 'Getting file info...');
+        let actualName = name;
+        try {
+          actualName = await getRealFilename(debridedUrl, name);
+          if (actualName !== name) {
+            repository.updateDownloadName(hash, actualName);
+            console.log(`[DownloadManager] Multi-file: Using filename from URL: ${actualName}`);
+          }
+        } catch (error: any) {
+          console.log(`[DownloadManager] Could not get real filename for multi-file: ${error.message}`);
+        }
+
         repository.updateDownloadStatusMessage(hash, null);
         repository.updateDownloadState(hash, 'downloading');
 
-        startDownload(hash, debridedUrl, name, {
+        startDownload(hash, debridedUrl, actualName, {
           onProgress: (progress) => {
             repository.updateDownloadProgress(hash, progress.downloadedBytes, progress.totalBytes, progress.downloadSpeed);
           },
