@@ -25,7 +25,7 @@ docker compose -f docker-compose.prod.yml up -d
 - qBittorrent UI: `http://localhost:8080` (admin/adminadmin)
 
 **Configure in Radarr/Sonarr:**
-1. Add Indexer: Settings > Indexers > Torznab > URL: `http://<IP>:9117/api/wawacity/`
+1. Add Indexer: Settings > Indexers > Torznab > URL: `http://<IP>:9117` > API Path: `/api/wawacity`
 2. Add Download Client: Settings > Download Clients > qBittorrent > Host: `<IP>`, Port: `8080`
 
 ## Soutien
@@ -143,11 +143,14 @@ docker compose --profile qbittorrent up -d
 1. Aller dans **Settings > Indexers > Add**
 2. Choisir **Torznab**
 3. Configurer :
-   - **Name** : DDL Wawacity (ou ZoneTelecharger)
-   - **URL** : `http://<IP>:9117/api/wawacity/` (ou `zonetelecharger`)
+   - **Name** : DDL Wawacity (ou autre)
+   - **URL** : `http://<IP>:9117`
+   - **API Path** : `/api/wawacity` ou `/api/zonetelecharger` ou `/api/darkiworld_premium`
    - **API Key** : `ddl-torznab` (n'importe quelle valeur)
    - **Categories** : 2000, 2040, 2045 (Radarr) ou 5000, 5040, 5045 (Sonarr)
 4. Cliquer sur **Test** puis **Save**
+
+> **Filtrer par hébergeur** : Ajouter l'hébergeur dans l'API Path, ex: `/api/wawacity/1fichier` ou `/api/wawacity/1fichier,uptobox`
 
 #### Étape 2 : Configurer DDL-qBittorrent comme Download Client
 
@@ -160,7 +163,12 @@ docker compose --profile qbittorrent up -d
    - **Username** : `admin` (ou votre valeur de `QB_USERNAME`)
    - **Password** : `adminadmin` (ou votre valeur de `QB_PASSWORD`)
    - **Category** : `radarr` ou `sonarr` (optionnel)
+   - **Minimum Seeders** : `1`
+   - **Seed Ratio** : `1`
+   - **Seed Time** : `1`
 4. Cliquer sur **Test** puis **Save**
+
+> **Note sur les critères de seed** : DDL-qBittorrent renvoie des valeurs de ratio et temps de seed supérieures aux minimums configurés, ce qui permet à Radarr/Sonarr de supprimer automatiquement les téléchargements terminés.
 
 > **Mappages de chemins distants** : Si Sonarr/Radarr et ddl-qbittorrent ne partagent pas le même système de fichiers, configurez les "Remote Path Mappings" dans Settings > Download Clients. Par exemple, si ddl-qbittorrent télécharge dans `/downloads` mais que Sonarr voit ce dossier comme `/mnt/downloads`, ajoutez un mapping : Host=`<IP ddl-qbittorrent>`, Remote Path=`/downloads`, Local Path=`/mnt/downloads`.
 
@@ -254,13 +262,15 @@ docker compose --profile blackhole up -d
 1. Aller dans **Settings > Indexers > Add**
 2. Choisir **Torznab**
 3. Configurer :
-   - **Name** : DDL Wawacity (ou ZoneTelecharger)
-   - **URL** : `http://<IP>:9117/api/wawacity/` (ou `zonetelecharger`)
+   - **Name** : DDL Wawacity (ou autre)
+   - **URL** : `http://<IP>:9117`
+   - **API Path** : `/api/wawacity` ou `/api/zonetelecharger` ou `/api/darkiworld_premium`
    - **API Key** : `ddl-torznab` (n'importe quelle valeur)
    - **Categories** : 2000, 2040, 2045
 4. Cliquer sur **Test** puis **Save**
 
 > Remplacer `<IP>` par l'adresse du serveur (ex: `192.168.1.100`, `localhost`, ou votre domaine)
+> **Filtrer par hébergeur** : Ajouter l'hébergeur dans l'API Path, ex: `/api/wawacity/1fichier`
 
 ### Étape 2 : Configurer le Download Client Blackhole
 
@@ -280,14 +290,16 @@ docker compose --profile blackhole up -d
 1. Aller dans **Settings > Indexers > Add**
 2. Choisir **Torznab**
 3. Configurer :
-   - **Name** : DDL Wawacity (ou ZoneTelecharger)
-   - **URL** : `http://<IP>:9117/api/wawacity/` (ou `zonetelecharger`)
+   - **Name** : DDL Wawacity (ou autre)
+   - **URL** : `http://<IP>:9117`
+   - **API Path** : `/api/wawacity` ou `/api/zonetelecharger` ou `/api/darkiworld_premium`
    - **API Key** : `ddl-torznab` (n'importe quelle valeur)
    - **Categories** : 5000, 5040, 5045
    - **Anime Categories** : 5070 (optionnel)
 4. Cliquer sur **Test** puis **Save**
 
 > Remplacer `<IP>` par l'adresse du serveur (ex: `192.168.1.100`, `localhost`, ou votre domaine)
+> **Filtrer par hébergeur** : Ajouter l'hébergeur dans l'API Path, ex: `/api/wawacity/1fichier`
 
 ### Étape 2 : Configurer le Download Client Blackhole
 
@@ -302,10 +314,11 @@ docker compose --profile blackhole up -d
 
 ## URLs Torznab disponibles
 
-| Site | URL |
-|------|-----|
-| Wawacity | `http://<IP>:9117/api/wawacity/` |
-| ZoneTelecharger | `http://<IP>:9117/api/zonetelecharger/` |
+| Site | URL | API Path |
+|------|-----|----------|
+| Wawacity | `http://<IP>:9117` | `/api/wawacity` |
+| ZoneTelecharger | `http://<IP>:9117` | `/api/zonetelecharger` |
+| Darkiworld Premium | `http://<IP>:9117` | `/api/darkiworld_premium` |
 
 > Remplacer `<IP>` par l'adresse du serveur (ex: `192.168.1.100`, `localhost`, ou votre domaine)
 
