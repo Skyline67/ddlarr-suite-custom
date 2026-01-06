@@ -128,6 +128,8 @@ async function getRealFilename(url: string, fallbackName: string): Promise<strin
 
 class DownloadManager {
   private processing = false;
+  // Track active debrid operations for cancellation
+  private activeDebridOperations = new Map<string, { cancelled: boolean }>();
 
   /**
    * Get the path where torrent files are stored
@@ -379,6 +381,13 @@ class DownloadManager {
       const download = repository.getDownloadByHash(hash);
       if (!download) continue;
 
+      // Cancel any active debrid operation (for real torrents in checking state)
+      if (this.activeDebridOperations.has(hash)) {
+        console.log(`[DownloadManager] Cancelling debrid operation for: ${hash}`);
+        this.activeDebridOperations.get(hash)!.cancelled = true;
+        this.activeDebridOperations.delete(hash);
+      }
+
       // Stop if downloading
       if (download.state === 'downloading') {
         stopDownload(hash);
@@ -405,6 +414,9 @@ class DownloadManager {
       repository.deleteDownload(hash);
       console.log(`[DownloadManager] Deleted download: ${hash}`);
     }
+
+    // Trigger queue processing since a slot may have freed up
+    this.processQueue();
   }
 
   /**
@@ -527,6 +539,10 @@ class DownloadManager {
   private async startProcessingRealTorrent(download: Download): Promise<void> {
     const { hash, name, savePath } = download;
 
+    // Track this debrid operation for cancellation
+    const operation = { cancelled: false };
+    this.activeDebridOperations.set(hash, operation);
+
     try {
       repository.updateDownloadState(hash, 'checking');
 
@@ -547,6 +563,10 @@ class DownloadManager {
         torrentBuffer,
         `${name}.torrent`,
         (status, serviceName) => {
+          // Check if cancelled during polling
+          if (operation.cancelled) {
+            throw new Error('Download cancelled');
+          }
           // Update status message based on debrid status
           if (status.status === 'queued') {
             repository.updateDownloadStatusMessage(hash, `Queued on ${serviceName}...`);
@@ -556,6 +576,12 @@ class DownloadManager {
         },
         timeoutMs
       );
+
+      // Check if cancelled after debrid completed
+      if (operation.cancelled) {
+        console.log(`[DownloadManager] Real torrent cancelled after debrid: ${name}`);
+        return;
+      }
 
       console.log(`[DownloadManager] Torrent ready on ${result.service}, ${result.downloadLinks.length} file(s)`);
 
@@ -652,9 +678,24 @@ class DownloadManager {
         }, result.totalSize, savePath);
       }
     } catch (error: any) {
-      repository.updateDownloadState(hash, 'error', error.message);
-      console.error(`[DownloadManager] Real torrent error: ${name} - ${error.message}`);
+      // Clean up operation tracking
+      this.activeDebridOperations.delete(hash);
+
+      // Don't set error state if cancelled (download was deleted)
+      if (operation.cancelled || error.message === 'Download cancelled') {
+        console.log(`[DownloadManager] Real torrent cancelled: ${name}`);
+      } else {
+        // Only update state if download still exists
+        const dl = repository.getDownloadByHash(hash);
+        if (dl) {
+          repository.updateDownloadState(hash, 'error', error.message);
+          console.error(`[DownloadManager] Real torrent error: ${name} - ${error.message}`);
+        }
+      }
       this.processQueue();
+    } finally {
+      // Always clean up operation tracking
+      this.activeDebridOperations.delete(hash);
     }
   }
 
