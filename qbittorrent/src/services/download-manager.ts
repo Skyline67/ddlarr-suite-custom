@@ -643,52 +643,92 @@ class DownloadManager {
           },
         }, result.totalSize, savePath);
       } else {
-        // Multiple files - download them sequentially
-        // For now, download the first one (TODO: handle multi-file torrents properly)
-        console.log(`[DownloadManager] Multi-file torrent with ${result.downloadLinks.length} files, downloading first`);
-        const debridedUrl = result.downloadLinks[0];
-        repository.updateDownloadLink(hash, debridedUrl);
+        // Multiple files - download them sequentially into a folder
+        console.log(`[DownloadManager] Multi-file torrent with ${result.downloadLinks.length} files`);
 
-        // Get real filename from URL for multi-file torrents
-        repository.updateDownloadStatusMessage(hash, 'Getting file info...');
-        let actualName = name;
-        try {
-          actualName = await getRealFilename(debridedUrl, name);
-          if (actualName !== name) {
-            repository.updateDownloadName(hash, actualName);
-            console.log(`[DownloadManager] Multi-file: Using filename from URL: ${actualName}`);
-          }
-        } catch (error: any) {
-          console.log(`[DownloadManager] Could not get real filename for multi-file: ${error.message}`);
+        // Create folder with torrent name
+        const torrentFolder = path.join(savePath, name);
+        if (!fs.existsSync(torrentFolder)) {
+          fs.mkdirSync(torrentFolder, { recursive: true });
+          console.log(`[DownloadManager] Created folder: ${torrentFolder}`);
         }
 
+        // Download all files sequentially
         repository.updateDownloadStatusMessage(hash, null);
         repository.updateDownloadState(hash, 'downloading');
 
-        startDownload(hash, debridedUrl, actualName, {
-          onProgress: (progress) => {
-            repository.updateDownloadProgress(hash, progress.downloadedBytes, progress.totalBytes, progress.downloadSpeed);
-          },
-          onMoving: (finalPath) => {
-            repository.updateDownloadStatusMessage(hash, `Moving to ${finalPath}...`);
-          },
-          onMoveProgress: (copiedBytes, totalBytes, speed) => {
-            const percent = Math.round((copiedBytes / totalBytes) * 100);
-            repository.updateDownloadStatusMessage(hash, `Copying... ${percent}% - ${formatSpeed(speed)}`);
-          },
-          onExtracting: () => {
-            repository.updateDownloadStatusMessage(hash, 'Extracting...');
-          },
-          onComplete: () => {
+        const totalFiles = result.downloadLinks.length;
+        let completedFiles = 0;
+        let totalDownloaded = 0;
+
+        const downloadNextFile = async (index: number) => {
+          if (index >= totalFiles) {
+            // All files completed
             repository.updateDownloadState(hash, 'completed');
+            console.log(`[DownloadManager] Completed all ${totalFiles} files: ${name}`);
             this.processQueue();
-          },
-          onError: (error) => {
-            repository.updateDownloadState(hash, 'error', error.message);
-            this.processQueue();
-          },
-          onPaused: () => {},
-        }, result.totalSize, savePath);
+            return;
+          }
+
+          const debridedUrl = result.downloadLinks[index];
+          repository.updateDownloadStatusMessage(hash, `File ${index + 1}/${totalFiles}: Getting info...`);
+
+          // Get real filename for this file
+          let filename = `file_${index + 1}`;
+          try {
+            filename = await getRealFilename(debridedUrl, filename);
+            console.log(`[DownloadManager] File ${index + 1}/${totalFiles}: ${filename}`);
+          } catch (error: any) {
+            console.log(`[DownloadManager] Could not get filename for file ${index + 1}: ${error.message}`);
+          }
+
+          repository.updateDownloadStatusMessage(hash, `File ${index + 1}/${totalFiles}: ${filename}`);
+
+          // Use a unique hash for each file download to avoid conflicts
+          const fileHash = `${hash}_file_${index}`;
+
+          startDownload(fileHash, debridedUrl, filename, {
+            onProgress: (progress) => {
+              // Update global progress considering completed files
+              const currentFileProgress = progress.downloadedBytes;
+              const globalDownloaded = totalDownloaded + currentFileProgress;
+              repository.updateDownloadProgress(hash, globalDownloaded, result.totalSize || 0, progress.downloadSpeed);
+              repository.updateDownloadStatusMessage(hash, `File ${index + 1}/${totalFiles}: ${filename} (${progress.progress}%)`);
+            },
+            onMoving: () => {
+              repository.updateDownloadStatusMessage(hash, `File ${index + 1}/${totalFiles}: Moving ${filename}...`);
+            },
+            onMoveProgress: (copiedBytes, totalBytes, speed) => {
+              const percent = Math.round((copiedBytes / totalBytes) * 100);
+              repository.updateDownloadStatusMessage(hash, `File ${index + 1}/${totalFiles}: Copying ${filename}... ${percent}%`);
+            },
+            onExtracting: () => {
+              repository.updateDownloadStatusMessage(hash, `File ${index + 1}/${totalFiles}: Extracting ${filename}...`);
+            },
+            onComplete: (finalPath) => {
+              completedFiles++;
+              // Get file size and add to total downloaded
+              try {
+                const stats = fs.statSync(finalPath);
+                totalDownloaded += stats.size;
+              } catch {}
+              console.log(`[DownloadManager] Completed file ${completedFiles}/${totalFiles}: ${filename}`);
+              // Download next file
+              downloadNextFile(index + 1);
+            },
+            onError: (error) => {
+              repository.updateDownloadState(hash, 'error', `File ${index + 1} failed: ${error.message}`);
+              console.error(`[DownloadManager] Error on file ${index + 1}: ${error.message}`);
+              this.processQueue();
+            },
+            onPaused: () => {
+              console.log(`[DownloadManager] Download paused at file ${index + 1}/${totalFiles}`);
+            },
+          }, undefined, torrentFolder);  // Download into torrent folder
+        };
+
+        // Start downloading first file
+        downloadNextFile(0);
       }
     } catch (error: any) {
       // Clean up operation tracking

@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { getConfig } from '../config.js';
-import { DebridService, DebridTorrentStatus } from './base.js';
+import { DebridService, DebridTorrentStatus, DebridFileInfo } from './base.js';
 
 const ALLDEBRID_API_BASE = 'https://api.alldebrid.com/v4';
 const ALLDEBRID_API_V41 = 'https://api.alldebrid.com/v4.1';

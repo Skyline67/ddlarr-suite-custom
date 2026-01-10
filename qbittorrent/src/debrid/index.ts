@@ -1,9 +1,9 @@
-import { DebridService, DebridTorrentStatus } from './base.js';
+import { DebridService, DebridTorrentStatus, DebridFileInfo } from './base.js';
 import { AllDebridClient } from './alldebrid.js';
 import { RealDebridClient } from './realdebrid.js';
 import { PremiumizeClient } from './premiumize.js';
 
-export type { DebridTorrentStatus } from './base.js';
+export type { DebridTorrentStatus, DebridFileInfo } from './base.js';
 
 // All available debrid services
 export const debridServices: DebridService[] = [
@@ -95,6 +95,7 @@ export interface DebridTorrentResult {
   service: string;
   torrentId: string;
   downloadLinks: string[];
+  files?: DebridFileInfo[];  // File info with paths for multi-file torrents
   totalSize?: number;  // Total size in bytes from debrid status
 }
 
@@ -135,12 +136,18 @@ export async function debridTorrent(
           onStatusUpdate(status, service.name);
         }
 
-        if (status.status === 'ready' && status.downloadLinks && status.downloadLinks.length > 0) {
-          console.log(`[Debrid] ${service.name}: Torrent ready with ${status.downloadLinks.length} links, size: ${status.totalSize}`);
+        // Check if ready - prefer files array over downloadLinks
+        const hasFiles = status.files && status.files.length > 0;
+        const hasLinks = status.downloadLinks && status.downloadLinks.length > 0;
+
+        if (status.status === 'ready' && (hasFiles || hasLinks)) {
+          const fileCount = hasFiles ? status.files!.length : status.downloadLinks!.length;
+          console.log(`[Debrid] ${service.name}: Torrent ready with ${fileCount} file(s), size: ${status.totalSize}`);
           return {
             service: service.name,
             torrentId,
-            downloadLinks: status.downloadLinks,
+            downloadLinks: status.downloadLinks || status.files!.map(f => f.link),
+            files: status.files,
             totalSize: status.totalSize,
           };
         }
