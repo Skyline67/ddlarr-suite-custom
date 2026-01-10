@@ -593,8 +593,8 @@ class DownloadManager {
 
       console.log(`[DownloadManager] Torrent ready on ${result.service}, ${result.downloadLinks.length} file(s)`);
 
-      // Clean up torrent file after successful debrid
-      this.deleteTorrentFile(hash);
+      // Note: Don't delete torrent file here - it's needed for /files endpoint
+      // It will be deleted when the download is removed via delete()
 
       // If single file, download it directly
       // If multiple files, download each sequentially
