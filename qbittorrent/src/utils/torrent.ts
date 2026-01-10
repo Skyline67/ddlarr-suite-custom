@@ -9,6 +9,11 @@ export interface TorrentAnalysis {
   infoHash?: string;     // Only for real torrents
 }
 
+export interface TorrentFile {
+  path: string;          // Full path relative to torrent root (e.g., "folder/file.mkv")
+  size: number;          // File size in bytes
+}
+
 const DDL_TORZNAB_MARKER = 'DDL-Torznab';
 
 /**
@@ -242,6 +247,132 @@ export function extractSizeFromTorrentBuffer(data: Buffer): number | null {
     return null;
   } catch (error) {
     console.error(`[Torrent] Error extracting size from torrent data:`, error);
+    return null;
+  }
+}
+
+/**
+ * Extrait la liste des fichiers d'un torrent multi-fichiers
+ * Pour les torrents single-file, retourne un seul fichier avec le nom du torrent
+ */
+export function extractFilesFromTorrentBuffer(data: Buffer): TorrentFile[] | null {
+  try {
+    const content = data.toString('latin1');
+    const name = extractNameFromTorrentBuffer(data);
+
+    // Check if it's a multi-file torrent by looking for "files" list in info dict
+    // Multi-file format: 5:filesl...e where each file is d6:lengthi<size>e4:pathl<path_components>ee
+    const filesMatch = content.match(/5:filesl/);
+
+    if (!filesMatch) {
+      // Single file torrent - return single entry
+      const size = extractSizeFromTorrentBuffer(data);
+      if (name && size) {
+        return [{
+          path: name,
+          size: size,
+        }];
+      }
+      return null;
+    }
+
+    // Multi-file torrent - parse the files list
+    const files: TorrentFile[] = [];
+    const filesStart = content.indexOf('5:filesl') + 8; // After "5:filesl"
+
+    let i = filesStart;
+    while (i < content.length && content[i] !== 'e') {
+      // Each file starts with 'd' (dict)
+      if (content[i] !== 'd') {
+        i++;
+        continue;
+      }
+      i++; // Skip 'd'
+
+      let fileLength: number | null = null;
+      let filePath: string[] = [];
+
+      // Parse dict entries until 'e'
+      while (i < content.length && content[i] !== 'e') {
+        // Read key (string)
+        const keyLenEnd = content.indexOf(':', i);
+        if (keyLenEnd === -1) break;
+        const keyLen = parseInt(content.slice(i, keyLenEnd), 10);
+        const keyStart = keyLenEnd + 1;
+        const key = content.slice(keyStart, keyStart + keyLen);
+        i = keyStart + keyLen;
+
+        if (key === 'length') {
+          // Integer value: i<number>e
+          if (content[i] === 'i') {
+            const numEnd = content.indexOf('e', i);
+            fileLength = parseInt(content.slice(i + 1, numEnd), 10);
+            i = numEnd + 1;
+          }
+        } else if (key === 'path') {
+          // List of strings: l<strings>e
+          if (content[i] === 'l') {
+            i++; // Skip 'l'
+            while (i < content.length && content[i] !== 'e') {
+              // Read string length
+              const strLenEnd = content.indexOf(':', i);
+              if (strLenEnd === -1) break;
+              const strLen = parseInt(content.slice(i, strLenEnd), 10);
+              const strStart = strLenEnd + 1;
+              // Extract raw bytes and decode as UTF-8
+              const strBytes = data.subarray(strStart, strStart + strLen);
+              const pathComponent = strBytes.toString('utf8');
+              filePath.push(pathComponent);
+              i = strStart + strLen;
+            }
+            i++; // Skip 'e' of list
+          }
+        } else {
+          // Skip unknown value
+          if (content[i] === 'i') {
+            // Integer
+            const numEnd = content.indexOf('e', i);
+            i = numEnd + 1;
+          } else if (content[i] === 'l' || content[i] === 'd') {
+            // List or dict - skip by counting depth
+            let depth = 1;
+            i++;
+            while (i < content.length && depth > 0) {
+              if (content[i] === 'l' || content[i] === 'd') depth++;
+              else if (content[i] === 'e') depth--;
+              else if (content[i] >= '0' && content[i] <= '9') {
+                // String - skip it
+                const sLenEnd = content.indexOf(':', i);
+                const sLen = parseInt(content.slice(i, sLenEnd), 10);
+                i = sLenEnd + sLen;
+              } else if (content[i] === 'i') {
+                // Integer - skip to 'e'
+                i = content.indexOf('e', i);
+              }
+              i++;
+            }
+          } else if (content[i] >= '0' && content[i] <= '9') {
+            // String
+            const sLenEnd = content.indexOf(':', i);
+            const sLen = parseInt(content.slice(i, sLenEnd), 10);
+            i = sLenEnd + 1 + sLen;
+          }
+        }
+      }
+      i++; // Skip 'e' of file dict
+
+      if (fileLength !== null && filePath.length > 0) {
+        files.push({
+          path: filePath.join('/'),
+          size: fileLength,
+        });
+      }
+    }
+
+    console.log(`[Torrent] Extracted ${files.length} files from multi-file torrent`);
+    return files.length > 0 ? files : null;
+  } catch (error) {
+    console.error(`[Torrent] Error extracting files from torrent data:`, error);
     return null;
   }
 }

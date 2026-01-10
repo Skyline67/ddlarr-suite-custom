@@ -1,6 +1,9 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import * as fs from 'fs';
+import * as path from 'path';
 import { downloadManager } from '../services/download-manager.js';
 import { getConfig } from '../config.js';
+import { extractFilesFromTorrentBuffer } from '../utils/torrent.js';
 import type { Download, DownloadState } from '../types/download.js';
 import type { QBTorrentInfo, QBTorrentState, QBTorrentProperties } from '../types/qbittorrent.js';
 
@@ -357,7 +360,42 @@ export async function torrentsRoutes(fastify: FastifyInstance): Promise<void> {
       return reply.status(404).send('Not found');
     }
 
-    // DDL downloads typically have a single file
+    // For real torrents, try to extract the actual file list from the .torrent file
+    if (download.type === 'real') {
+      const config = getConfig();
+      const torrentPath = path.join(config.dataPath, 'torrents', `${query.hash}.torrent`);
+
+      if (fs.existsSync(torrentPath)) {
+        try {
+          const torrentData = fs.readFileSync(torrentPath);
+          const files = extractFilesFromTorrentBuffer(torrentData);
+
+          if (files && files.length > 0) {
+            const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+            const globalProgress = download.totalSize > 0
+              ? download.downloadedSize / download.totalSize
+              : (download.state === 'completed' ? 1 : 0);
+
+            console.log(`[Torrents] Returning ${files.length} files for real torrent ${download.name}`);
+
+            return reply.send(files.map((file, index) => ({
+              index,
+              name: file.path,
+              size: file.size,
+              progress: globalProgress, // Same progress for all files (we download as a whole)
+              priority: 1,
+              is_seed: false,
+              piece_range: [0, 0],
+              availability: 1,
+            })));
+          }
+        } catch (error: any) {
+          console.error(`[Torrents] Error reading torrent file: ${error.message}`);
+        }
+      }
+    }
+
+    // Fallback: DDL downloads or failed torrent parsing - return single file
     return reply.send([{
       index: 0,
       name: download.name,
