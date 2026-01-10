@@ -393,16 +393,24 @@ class DownloadManager {
         stopDownload(hash);
       }
 
-      // Delete file if requested
-      if (deleteFiles && download.state === 'completed') {
+      // Delete file/folder if requested
+      if (deleteFiles) {
         const filePath = path.join(download.savePath, download.name);
         try {
           if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-            console.log(`[DownloadManager] Deleted file: ${filePath}`);
+            const stats = fs.statSync(filePath);
+            if (stats.isDirectory()) {
+              // Multi-file torrent: delete folder recursively
+              fs.rmSync(filePath, { recursive: true, force: true });
+              console.log(`[DownloadManager] Deleted folder: ${filePath}`);
+            } else {
+              // Single file: delete file
+              fs.unlinkSync(filePath);
+              console.log(`[DownloadManager] Deleted file: ${filePath}`);
+            }
           }
         } catch (error: any) {
-          console.error(`[DownloadManager] Error deleting file: ${error.message}`);
+          console.error(`[DownloadManager] Error deleting file/folder: ${error.message}`);
         }
       }
 
