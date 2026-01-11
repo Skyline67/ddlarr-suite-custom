@@ -196,8 +196,8 @@ class DownloadManager {
     }
 
     if (analysis.type === 'ddl') {
-      // DDL fake torrent - use original flow
-      const hash = generateDownloadHash(analysis.ddlLink!);
+      // DDL fake torrent - use info hash for Sonarr/Radarr tracking
+      const hash = analysis.infoHash;
 
       const download: Omit<Download, 'downloadSpeed'> = {
         hash,

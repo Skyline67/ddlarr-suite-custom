@@ -5,8 +5,8 @@ export interface TorrentAnalysis {
   type: 'ddl' | 'real';
   name: string;
   size: number;
+  infoHash: string;      // Info hash for all torrents (needed for Sonarr/Radarr tracking)
   ddlLink?: string;      // Only for DDL fake torrents
-  infoHash?: string;     // Only for real torrents
 }
 
 export interface TorrentFile {
@@ -30,6 +30,13 @@ export function analyzeTorrent(data: Buffer): TorrentAnalysis | null {
       return null;
     }
 
+    // Always compute info hash - needed for Sonarr/Radarr tracking
+    const infoHash = computeInfoHash(data);
+    if (!infoHash) {
+      console.error('[Torrent] Cannot compute info hash');
+      return null;
+    }
+
     // If created by DDL-Torznab, it's a fake torrent with DDL link
     if (createdBy === DDL_TORZNAB_MARKER) {
       const ddlLink = extractLinkFromTorrentBuffer(data);
@@ -41,17 +48,12 @@ export function analyzeTorrent(data: Buffer): TorrentAnalysis | null {
         type: 'ddl',
         name,
         size,
+        infoHash,
         ddlLink,
       };
     }
 
-    // Otherwise it's a real torrent - compute info hash
-    const infoHash = computeInfoHash(data);
-    if (!infoHash) {
-      console.error('[Torrent] Cannot compute info hash');
-      return null;
-    }
-
+    // Otherwise it's a real torrent
     return {
       type: 'real',
       name,
@@ -118,7 +120,8 @@ export function computeInfoHash(data: Buffer): string | null {
         if (depth === 0) {
           // Found the end of the info dict
           const infoDictBytes = data.subarray(dictStart, i + 1);
-          const hash = crypto.createHash('sha1').update(infoDictBytes).digest('hex');
+          // Use uppercase for Sonarr/Radarr compatibility
+          const hash = crypto.createHash('sha1').update(infoDictBytes).digest('hex').toUpperCase();
           return hash;
         }
         i++;
