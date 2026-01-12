@@ -55,9 +55,12 @@ export function buildTorznabResponse(items: TorznabItem[], siteTitle: string, ba
     }
     if (item.season !== undefined) {
       torznabAttrs.push({ '@_name': 'season', '@_value': String(item.season) });
-    }
-    if (item.episode !== undefined) {
-      torznabAttrs.push({ '@_name': 'episode', '@_value': String(item.episode) });
+      // Pour les season packs (pas d'episode specifique), indiquer "tous les episodes" avec episode=0
+      if (item.episode === undefined) {
+        torznabAttrs.push({ '@_name': 'episode', '@_value': '0' });
+      } else {
+        torznabAttrs.push({ '@_name': 'episode', '@_value': String(item.episode) });
+      }
     }
     if (item.size) {
       torznabAttrs.push({ '@_name': 'size', '@_value': String(item.size) });

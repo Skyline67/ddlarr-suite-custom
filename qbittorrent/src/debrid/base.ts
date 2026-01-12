@@ -1,4 +1,14 @@
 /**
+ * File info from debrid service, includes path for multi-file torrents
+ */
+export interface DebridFileInfo {
+  link: string;           // Download link
+  filename: string;       // File name
+  path: string;           // Relative path within torrent (e.g., "Season 1/Episode 1.mkv")
+  size: number;           // File size in bytes
+}
+
+/**
  * Status of a torrent being processed by a debrid service
  */
 export interface DebridTorrentStatus {
@@ -6,7 +16,8 @@ export interface DebridTorrentStatus {
   status: 'queued' | 'downloading' | 'ready' | 'error';
   progress: number;  // 0-100
   totalSize?: number;        // Total size in bytes
-  downloadLinks?: string[];  // Available when status is 'ready'
+  downloadLinks?: string[];  // Available when status is 'ready' (deprecated, use files)
+  files?: DebridFileInfo[];  // Available when status is 'ready', includes file info with paths
   errorMessage?: string;     // Available when status is 'error'
 }
 
