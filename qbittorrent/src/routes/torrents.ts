@@ -1,6 +1,9 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import * as fs from 'fs';
+import * as path from 'path';
 import { downloadManager } from '../services/download-manager.js';
 import { getConfig } from '../config.js';
+import { extractFilesFromTorrentBuffer } from '../utils/torrent.js';
 import type { Download, DownloadState } from '../types/download.js';
 import type { QBTorrentInfo, QBTorrentState, QBTorrentProperties } from '../types/qbittorrent.js';
 
@@ -130,9 +133,9 @@ export async function torrentsRoutes(fastify: FastifyInstance): Promise<void> {
       downloads = downloads.filter(d => d.category === query.category);
     }
 
-    // Filter by hashes
+    // Filter by hashes (normalize to uppercase)
     if (query.hashes) {
-      const hashList = query.hashes.split('|');
+      const hashList = query.hashes.split('|').map(h => h.toUpperCase());
       downloads = downloads.filter(d => hashList.includes(d.hash));
     }
 
@@ -168,12 +171,13 @@ export async function torrentsRoutes(fastify: FastifyInstance): Promise<void> {
   // Get torrent properties
   fastify.get('/api/v2/torrents/properties', async (request: FastifyRequest, reply: FastifyReply) => {
     const query = request.query as { hash?: string };
-    console.log(`[Torrents] GET /properties hash=${query.hash}`);
-    if (!query.hash) {
+    const hash = query.hash?.toUpperCase();
+    console.log(`[Torrents] GET /properties hash=${hash}`);
+    if (!hash) {
       return reply.status(400).send('Missing hash');
     }
 
-    const download = downloadManager.getByHash(query.hash);
+    const download = downloadManager.getByHash(hash);
     if (!download) {
       return reply.status(404).send('Not found');
     }
@@ -300,7 +304,8 @@ export async function torrentsRoutes(fastify: FastifyInstance): Promise<void> {
     if (hashesParam === 'all') {
       hashes = downloadManager.getAll().map(d => d.hash);
     } else {
-      hashes = hashesParam.split('|').filter(h => h);
+      // Normalize hashes to uppercase (Sonarr/Radarr may send lowercase)
+      hashes = hashesParam.split('|').filter(h => h).map(h => h.toUpperCase());
     }
 
     downloadManager.pause(hashes);
@@ -317,7 +322,8 @@ export async function torrentsRoutes(fastify: FastifyInstance): Promise<void> {
     if (hashesParam === 'all') {
       hashes = downloadManager.getAll().map(d => d.hash);
     } else {
-      hashes = hashesParam.split('|').filter(h => h);
+      // Normalize hashes to uppercase (Sonarr/Radarr may send lowercase)
+      hashes = hashesParam.split('|').filter(h => h).map(h => h.toUpperCase());
     }
 
     downloadManager.resume(hashes);
@@ -336,7 +342,8 @@ export async function torrentsRoutes(fastify: FastifyInstance): Promise<void> {
     if (hashesParam === 'all') {
       hashes = downloadManager.getAll().map(d => d.hash);
     } else {
-      hashes = hashesParam.split('|').filter(h => h);
+      // Normalize hashes to uppercase (Sonarr/Radarr may send lowercase)
+      hashes = hashesParam.split('|').filter(h => h).map(h => h.toUpperCase());
     }
 
     await downloadManager.delete(hashes, deleteFiles);
@@ -347,17 +354,53 @@ export async function torrentsRoutes(fastify: FastifyInstance): Promise<void> {
   // Get torrent files
   fastify.get('/api/v2/torrents/files', async (request: FastifyRequest, reply: FastifyReply) => {
     const query = request.query as { hash?: string };
-    console.log(`[Torrents] GET /files hash=${query.hash}`);
-    if (!query.hash) {
+    const hash = query.hash?.toUpperCase();
+    console.log(`[Torrents] GET /files hash=${hash}`);
+    if (!hash) {
       return reply.status(400).send('Missing hash');
     }
 
-    const download = downloadManager.getByHash(query.hash);
+    const download = downloadManager.getByHash(hash);
     if (!download) {
       return reply.status(404).send('Not found');
     }
 
-    // DDL downloads typically have a single file
+    // For real torrents, try to extract the actual file list from the .torrent file
+    if (download.type === 'real') {
+      const config = getConfig();
+      const torrentPath = path.join(config.dataPath, 'torrents', `${hash}.torrent`);
+
+      if (fs.existsSync(torrentPath)) {
+        try {
+          const torrentData = fs.readFileSync(torrentPath);
+          const files = extractFilesFromTorrentBuffer(torrentData);
+
+          if (files && files.length > 0) {
+            const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+            const globalProgress = download.totalSize > 0
+              ? download.downloadedSize / download.totalSize
+              : (download.state === 'completed' ? 1 : 0);
+
+            console.log(`[Torrents] Returning ${files.length} files for real torrent ${download.name}`);
+
+            return reply.send(files.map((file, index) => ({
+              index,
+              name: file.path,
+              size: file.size,
+              progress: globalProgress, // Same progress for all files (we download as a whole)
+              priority: 1,
+              is_seed: false,
+              piece_range: [0, 0],
+              availability: 1,
+            })));
+          }
+        } catch (error: any) {
+          console.error(`[Torrents] Error reading torrent file: ${error.message}`);
+        }
+      }
+    }
+
+    // Fallback: DDL downloads or failed torrent parsing - return single file
     return reply.send([{
       index: 0,
       name: download.name,

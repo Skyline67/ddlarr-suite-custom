@@ -10,6 +10,7 @@ import { getDatabase } from './db/schema.js';
 import { registerRoutes } from './routes/index.js';
 import { validateSession, cleanupSessions } from './services/session.js';
 import { downloadManager } from './services/download-manager.js';
+import { blackholeWatcher } from './services/blackhole-watcher.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,6 +25,9 @@ async function main() {
   console.log(`Download path: ${config.downloadPath}`);
   console.log(`Temp path: ${config.tempPath}`);
   console.log(`Max concurrent downloads: ${config.maxConcurrentDownloads}`);
+  if (config.blackhole.enabled) {
+    console.log(`Blackhole path: ${config.blackhole.path}`);
+  }
   console.log('');
 
   // Initialize database
@@ -92,6 +96,9 @@ async function main() {
 
   // Resume downloads on startup
   downloadManager.resumeOnStartup();
+
+  // Start blackhole watcher (if enabled)
+  await blackholeWatcher.start();
 
   // Start server
   try {
