@@ -133,9 +133,9 @@ export async function torrentsRoutes(fastify: FastifyInstance): Promise<void> {
       downloads = downloads.filter(d => d.category === query.category);
     }
 
-    // Filter by hashes
+    // Filter by hashes (normalize to uppercase)
     if (query.hashes) {
-      const hashList = query.hashes.split('|');
+      const hashList = query.hashes.split('|').map(h => h.toUpperCase());
       downloads = downloads.filter(d => hashList.includes(d.hash));
     }
 
@@ -171,12 +171,13 @@ export async function torrentsRoutes(fastify: FastifyInstance): Promise<void> {
   // Get torrent properties
   fastify.get('/api/v2/torrents/properties', async (request: FastifyRequest, reply: FastifyReply) => {
     const query = request.query as { hash?: string };
-    console.log(`[Torrents] GET /properties hash=${query.hash}`);
-    if (!query.hash) {
+    const hash = query.hash?.toUpperCase();
+    console.log(`[Torrents] GET /properties hash=${hash}`);
+    if (!hash) {
       return reply.status(400).send('Missing hash');
     }
 
-    const download = downloadManager.getByHash(query.hash);
+    const download = downloadManager.getByHash(hash);
     if (!download) {
       return reply.status(404).send('Not found');
     }
@@ -303,7 +304,8 @@ export async function torrentsRoutes(fastify: FastifyInstance): Promise<void> {
     if (hashesParam === 'all') {
       hashes = downloadManager.getAll().map(d => d.hash);
     } else {
-      hashes = hashesParam.split('|').filter(h => h);
+      // Normalize hashes to uppercase (Sonarr/Radarr may send lowercase)
+      hashes = hashesParam.split('|').filter(h => h).map(h => h.toUpperCase());
     }
 
     downloadManager.pause(hashes);
@@ -320,7 +322,8 @@ export async function torrentsRoutes(fastify: FastifyInstance): Promise<void> {
     if (hashesParam === 'all') {
       hashes = downloadManager.getAll().map(d => d.hash);
     } else {
-      hashes = hashesParam.split('|').filter(h => h);
+      // Normalize hashes to uppercase (Sonarr/Radarr may send lowercase)
+      hashes = hashesParam.split('|').filter(h => h).map(h => h.toUpperCase());
     }
 
     downloadManager.resume(hashes);
@@ -339,7 +342,8 @@ export async function torrentsRoutes(fastify: FastifyInstance): Promise<void> {
     if (hashesParam === 'all') {
       hashes = downloadManager.getAll().map(d => d.hash);
     } else {
-      hashes = hashesParam.split('|').filter(h => h);
+      // Normalize hashes to uppercase (Sonarr/Radarr may send lowercase)
+      hashes = hashesParam.split('|').filter(h => h).map(h => h.toUpperCase());
     }
 
     await downloadManager.delete(hashes, deleteFiles);
@@ -350,12 +354,13 @@ export async function torrentsRoutes(fastify: FastifyInstance): Promise<void> {
   // Get torrent files
   fastify.get('/api/v2/torrents/files', async (request: FastifyRequest, reply: FastifyReply) => {
     const query = request.query as { hash?: string };
-    console.log(`[Torrents] GET /files hash=${query.hash}`);
-    if (!query.hash) {
+    const hash = query.hash?.toUpperCase();
+    console.log(`[Torrents] GET /files hash=${hash}`);
+    if (!hash) {
       return reply.status(400).send('Missing hash');
     }
 
-    const download = downloadManager.getByHash(query.hash);
+    const download = downloadManager.getByHash(hash);
     if (!download) {
       return reply.status(404).send('Not found');
     }
@@ -363,7 +368,7 @@ export async function torrentsRoutes(fastify: FastifyInstance): Promise<void> {
     // For real torrents, try to extract the actual file list from the .torrent file
     if (download.type === 'real') {
       const config = getConfig();
-      const torrentPath = path.join(config.dataPath, 'torrents', `${query.hash}.torrent`);
+      const torrentPath = path.join(config.dataPath, 'torrents', `${hash}.torrent`);
 
       if (fs.existsSync(torrentPath)) {
         try {
