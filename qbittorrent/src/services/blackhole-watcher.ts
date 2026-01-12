@@ -1,9 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import chokidar, { FSWatcher } from 'chokidar';
 import { getConfig } from '../config.js';
 import { downloadManager } from './download-manager.js';
 
+const POLL_INTERVAL = 60 * 1000;  // 1 minute
 const STABLE_FILE_CHECK_INTERVAL = 500;  // ms between size checks
 const STABLE_FILE_TIMEOUT = 5000;        // max time to wait for stable file
 
@@ -32,12 +32,13 @@ async function waitForStableFile(filePath: string): Promise<boolean> {
 }
 
 class BlackholeWatcher {
-  private watcher: FSWatcher | null = null;
+  private pollInterval: NodeJS.Timeout | null = null;
   private processing: Set<string> = new Set();
   private failedPath: string = '';
+  private watchPath: string = '';
 
   /**
-   * Start watching the blackhole folder
+   * Start watching the blackhole folder with polling
    */
   async start(): Promise<void> {
     const config = getConfig();
@@ -47,87 +48,64 @@ class BlackholeWatcher {
       return;
     }
 
-    const watchPath = config.blackhole.path;
-    this.failedPath = path.join(watchPath, 'failed');
+    this.watchPath = config.blackhole.path;
+    this.failedPath = path.join(this.watchPath, 'failed');
 
     // Ensure directories exist
     try {
-      await fs.promises.mkdir(watchPath, { recursive: true });
+      await fs.promises.mkdir(this.watchPath, { recursive: true });
       await fs.promises.mkdir(this.failedPath, { recursive: true });
-      console.log(`[Blackhole] Watching folder: ${watchPath}`);
+      console.log(`[Blackhole] Watching folder: ${this.watchPath}`);
     } catch (error) {
       console.error(`[Blackhole] Error creating directories:`, error);
       return;
     }
 
-    // Scan existing files first
-    await this.scanExisting();
+    // Scan existing files immediately
+    await this.scanFolder();
 
-    // Start watching for new files
-    this.watcher = chokidar.watch(watchPath, {
-      ignored: [
-        /(^|[\/\\])\../,         // Ignore dotfiles
-        '**/failed/**',          // Ignore failed folder
-      ],
-      persistent: true,
-      depth: 0,                  // Only watch top level
-      awaitWriteFinish: {
-        stabilityThreshold: 1000,
-        pollInterval: 100,
-      },
-    });
+    // Start polling
+    this.pollInterval = setInterval(() => {
+      this.scanFolder();
+    }, POLL_INTERVAL);
 
-    this.watcher.on('add', (filePath) => {
-      if (this.isValidTorrent(filePath)) {
-        this.processFile(filePath);
-      }
-    });
-
-    this.watcher.on('error', (error) => {
-      console.error('[Blackhole] Watcher error:', error);
-    });
-
-    console.log('[Blackhole] Watcher started');
+    console.log(`[Blackhole] Watcher started (polling every ${POLL_INTERVAL / 1000}s)`);
   }
 
   /**
    * Stop watching
    */
-  async stop(): Promise<void> {
-    if (this.watcher) {
-      await this.watcher.close();
-      this.watcher = null;
+  stop(): void {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
       console.log('[Blackhole] Watcher stopped');
     }
   }
 
   /**
-   * Scan and process existing .torrent files
+   * Scan folder for .torrent files and process them
    */
-  private async scanExisting(): Promise<void> {
-    const config = getConfig();
-    const watchPath = config.blackhole.path;
-
+  private async scanFolder(): Promise<void> {
     try {
-      const files = await fs.promises.readdir(watchPath);
-      const torrentFiles = files.filter(f => this.isValidTorrent(f));
+      const files = await fs.promises.readdir(this.watchPath);
 
-      if (torrentFiles.length > 0) {
-        console.log(`[Blackhole] Found ${torrentFiles.length} existing torrent files`);
-        for (const file of torrentFiles) {
-          await this.processFile(path.join(watchPath, file));
+      for (const file of files) {
+        if (this.isValidTorrent(file)) {
+          const filePath = path.join(this.watchPath, file);
+          await this.processFile(filePath);
         }
       }
     } catch (error) {
-      console.error('[Blackhole] Error scanning existing files:', error);
+      console.error('[Blackhole] Error scanning folder:', error);
     }
   }
 
   /**
    * Check if a file is a valid torrent file
    */
-  private isValidTorrent(filePath: string): boolean {
-    const ext = path.extname(filePath).toLowerCase();
+  private isValidTorrent(filename: string): boolean {
+    const ext = path.extname(filename).toLowerCase();
     return ext === '.torrent';
   }
 
