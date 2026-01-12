@@ -26,6 +26,11 @@ export interface Config {
       apiKey: string;
     };
   };
+  blackhole: {
+    enabled: boolean;
+    path: string;
+    category: string;
+  };
 }
 
 let config: Config | null = null;
@@ -59,6 +64,11 @@ export function getConfig(): Config {
           enabled: process.env.PREMIUMIZE_ENABLED === 'true',
           apiKey: process.env.PREMIUMIZE_API_KEY || '',
         },
+      },
+      blackhole: {
+        enabled: process.env.BLACKHOLE_ENABLED === 'true',
+        path: process.env.BLACKHOLE_PATH || '/blackhole',
+        category: process.env.BLACKHOLE_CATEGORY || '',
       },
     };
   }

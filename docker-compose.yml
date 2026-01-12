@@ -173,8 +173,13 @@ services:
       - REALDEBRID_API_KEY=${REALDEBRID_API_KEY:-}
       - PREMIUMIZE_ENABLED=${PREMIUMIZE_ENABLED:-false}
       - PREMIUMIZE_API_KEY=${PREMIUMIZE_API_KEY:-}
+      # Blackhole Watch Folder
+      - BLACKHOLE_ENABLED=${BLACKHOLE_ENABLED:-false}
+      - BLACKHOLE_PATH=/blackhole
+      - BLACKHOLE_CATEGORY=${BLACKHOLE_CATEGORY:-}
     volumes:
       - ${QBITTORRENT_DATA_PATH:-./qbittorrent-data}:/data
       - ${DOWNLOADS_PATH:-./downloads}:/downloads
       - ${DOWNLOADS_TEMP_PATH:-./downloads-temp}:/downloads-temp
+      - ${QBITTORRENT_BLACKHOLE_PATH:-./blackhole}:/blackhole
     restart: unless-stopped
