@@ -6,7 +6,7 @@ import * as crypto from 'crypto';
  */
 export function generateDownloadHash(link: string): string {
   const data = `${link}:${Date.now()}:${Math.random()}`;
-  return crypto.createHash('sha1').update(data).digest('hex');
+  return crypto.createHash('sha1').update(data).digest('hex').toUpperCase();
 }
 
 /**

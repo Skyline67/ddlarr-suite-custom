@@ -272,11 +272,53 @@ class DownloadManager {
 
   /**
    * Add a download from URL
+   * If the URL points to a .torrent file, it will be downloaded and processed as a torrent
    */
   async addUrl(
     url: string,
     options: { savePath?: string; category?: string; paused?: boolean; name?: string } = {}
   ): Promise<string> {
+    // Check if URL points to a .torrent file using HEAD request
+    try {
+      const urlObj = new URL(url);
+      const pathname = urlObj.pathname.toLowerCase();
+
+      // Quick check by extension first, then verify with HEAD request
+      let isTorrentFile = pathname.endsWith('.torrent');
+
+      if (!isTorrentFile) {
+        // Check Content-Type via HEAD request
+        try {
+          const headResponse = await fetch(url, { method: 'HEAD', redirect: 'follow' });
+          if (headResponse.ok) {
+            const contentType = headResponse.headers.get('content-type') || '';
+            isTorrentFile = contentType.includes('application/x-bittorrent') ||
+                           contentType.includes('application/x-torrent');
+          }
+        } catch {
+          // HEAD request failed, continue with extension-based detection
+        }
+      }
+
+      if (isTorrentFile) {
+        console.log(`[DownloadManager] URL points to .torrent file, downloading: ${url}`);
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(`Failed to download torrent file: HTTP ${response.status}`);
+        }
+        const arrayBuffer = await response.arrayBuffer();
+        const torrentData = Buffer.from(arrayBuffer);
+        return this.addTorrent(torrentData, options);
+      }
+    } catch (error: any) {
+      // If it's a torrent download error, rethrow it
+      if (error.message.includes('torrent')) {
+        throw error;
+      }
+      // Otherwise continue with regular URL handling
+      console.log(`[DownloadManager] URL parsing failed, treating as direct link: ${error.message}`);
+    }
+
     const hash = generateDownloadHash(url);
     const config = getConfig();
 
