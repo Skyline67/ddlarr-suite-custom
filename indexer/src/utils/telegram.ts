@@ -2,8 +2,8 @@ import { fetchHtml } from './http.js';
 
 // Default Telegram channel URLs
 const DEFAULT_TELEGRAM_CHANNELS = {
-  wawacity: 'https://t.me/s/Wawacityofficiel',
-  zonetelecharger: 'https://t.me/s/ztofficiel',
+  wawacity: 'https://t.me/Wawacityofficiel',
+  zonetelecharger: 'https://t.me/ztofficiel',
 };
 
 // Cache for fetched URLs (to avoid fetching on every request)
