@@ -49,9 +49,11 @@ export const useTorrentsStore = defineStore('torrents', () => {
     torrents.value = []
   }
 
-  async function fetchTorrents(): Promise<void> {
+  async function fetchTorrents(showLoading = true): Promise<void> {
     try {
-      isLoading.value = true
+      if (showLoading) {
+        isLoading.value = true
+      }
       error.value = null
       torrents.value = await apiClient.getTorrents()
     } catch (e: any) {
@@ -60,7 +62,9 @@ export const useTorrentsStore = defineStore('torrents', () => {
       }
       error.value = e.message
     } finally {
-      isLoading.value = false
+      if (showLoading) {
+        isLoading.value = false
+      }
     }
   }
 
