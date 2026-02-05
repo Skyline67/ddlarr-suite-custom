@@ -23,7 +23,7 @@ onUnmounted(() => {
 
 function startPolling() {
   pollInterval = window.setInterval(() => {
-    store.fetchTorrents()
+    store.fetchTorrents(false)  // Don't show loading state during polling
   }, 2000)
 }
 
