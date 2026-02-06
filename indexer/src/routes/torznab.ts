@@ -189,14 +189,17 @@ async function executeSearch(ctx: SearchContext): Promise<string> {
         results = [];
       }
       break;
+      
     case 'tvsearch':
-      if (searchParams.imdbid) {
-        results = await scraper.searchSeries(searchParams);
-      } else {
-        console.log(`[Torznab] Skipping tvsearch without imdbid to avoid duplicates`);
-        results = [];
-      }
-      break;
+  // fallback to generic search if no imdb
+  results = await scraper.searchSeries(searchParams);
+
+  if ((!results || results.length === 0) && searchParams.q) {
+    console.log('[Torznab] Fallback tvsearch → generic search');
+    results = await scraper.searchSeries({ ...searchParams, imdbid: undefined });
+  }
+  break;
+
     case 'book':
       if (scraper.searchEbooks) {
         results = await scraper.searchEbooks(searchParams);
